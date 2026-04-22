@@ -6,7 +6,6 @@ import { PushNotificationProvider } from '@/contexts/PushNotificationContext';
 import { PushStrategyProvider } from '@/contexts/PushStrategyContext';
 import { Suspense } from 'react';
 import GoogleAnalytics from '@/components/GoogleAnalytics';
-import ErrorBoundary from '@/components/ErrorBoundary';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -120,15 +119,13 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <GoogleAnalytics />
         </Suspense>
-        <ErrorBoundary>
-          <AuthProvider>
-            <PushNotificationProvider>
-              <PushStrategyProvider>
-                {children}
-              </PushStrategyProvider>
-            </PushNotificationProvider>
-          </AuthProvider>
-        </ErrorBoundary>
+        <AuthProvider>
+          <PushNotificationProvider>
+            <PushStrategyProvider>
+              {children}
+            </PushStrategyProvider>
+          </PushNotificationProvider>
+        </AuthProvider>
 </body>
     </html>
   );
