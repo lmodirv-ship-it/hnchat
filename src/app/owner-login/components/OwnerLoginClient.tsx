@@ -10,8 +10,7 @@ export default function OwnerLoginClient() {
   const router = useRouter();
   const supabase = createClient();
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [status, setStatus] = useState<'checking' | 'idle' | 'loading' | 'error'>('checking');
+  const [status, setStatus] = useState<'checking' | 'idle' | 'loading' | 'error' | 'sent'>('checking');
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
@@ -33,25 +32,27 @@ export default function OwnerLoginClient() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (email.trim().toLowerCase() !== OWNER_EMAIL.toLowerCase()) {
-      setErrorMsg('Access denied. Invalid credentials.');
+      setErrorMsg('Access denied. This email is not authorized.');
       setStatus('error');
       return;
     }
     setStatus('loading');
     setErrorMsg('');
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithOtp({
         email: email.trim(),
-        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/owner`,
+        },
       });
       if (error) {
-        setErrorMsg(error.message || 'Authentication failed.');
+        setErrorMsg(error.message || 'Failed to send login link.');
         setStatus('error');
         return;
       }
-      router.replace('/owner');
+      setStatus('sent');
     } catch (err: any) {
-      setErrorMsg(err.message || 'Authentication failed.');
+      setErrorMsg(err.message || 'Failed to send login link.');
       setStatus('error');
     }
   };
@@ -91,6 +92,22 @@ export default function OwnerLoginClient() {
               <div className="w-8 h-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
               <p className="text-sm text-slate-400">Checking session...</p>
             </div>
+          ) : status === 'sent' ? (
+            <div className="flex flex-col items-center gap-3 py-4">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center"
+                style={{ background: 'rgba(0,210,255,0.1)', border: '1px solid rgba(0,210,255,0.3)' }}>
+                <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <p className="text-sm text-white font-medium">Check your email</p>
+              <p className="text-xs text-slate-400 text-center">A login link has been sent to <span className="text-cyan-400">{email}</span>. Click the link to access the dashboard.</p>
+              <button
+                onClick={() => setStatus('idle')}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors mt-2">
+                Send again
+              </button>
+            </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4 text-left">
               <div>
@@ -102,23 +119,6 @@ export default function OwnerLoginClient() {
                   placeholder="Enter owner email"
                   required
                   autoComplete="username"
-                  className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
-                  style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1.5">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => { setPassword(e.target.value); setStatus('idle'); setErrorMsg(''); }}
-                  placeholder="Enter password"
-                  required
-                  autoComplete="current-password"
                   className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
                   style={{
                     background: 'rgba(255,255,255,0.05)',
@@ -139,7 +139,7 @@ export default function OwnerLoginClient() {
                 {status === 'loading' && (
                   <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
                 )}
-                {status === 'loading' ? 'Authenticating...' : 'Enter Dashboard'}
+                {status === 'loading' ? 'Sending...' : 'Send Login Link'}
               </button>
             </form>
           )}
