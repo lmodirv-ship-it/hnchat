@@ -1,4 +1,3 @@
-
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
@@ -31,10 +30,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Listen for auth changes
     const {
       data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+
+      // Auto-create user_profiles row on first sign-in (OAuth or email)
+      if (event === 'SIGNED_IN' && session?.user) {
+        const u = session.user;
+        const meta = u.user_metadata || {};
+        await supabase.from('user_profiles').upsert(
+          {
+            id: u.id,
+            email: u.email ?? '',
+            full_name: meta.full_name || meta.name || '',
+            username: meta.username || (u.email ? u.email.split('@')[0] : ''),
+            avatar_url: meta.avatar_url || meta.picture || '',
+          },
+          { onConflict: 'id', ignoreDuplicates: true }
+        );
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -46,6 +61,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     password: string,
     metadata: { fullName?: string; username?: string; avatarUrl?: string } = {}
   ) => {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '');
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -55,10 +71,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           username: metadata?.username || email.split('@')[0],
           avatar_url: metadata?.avatarUrl || '',
         },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${siteUrl}/auth/callback`,
       },
     });
     if (error) throw error;
+
+    // Immediately create user_profiles row so profile is available right away
+    if (data.user) {
+      await supabase.from('user_profiles').upsert(
+        {
+          id: data.user.id,
+          email: email,
+          full_name: metadata?.fullName || '',
+          username: metadata?.username || email.split('@')[0],
+          avatar_url: metadata?.avatarUrl || '',
+        },
+        { onConflict: 'id', ignoreDuplicates: true }
+      );
+    }
+
     return data;
   };
 
