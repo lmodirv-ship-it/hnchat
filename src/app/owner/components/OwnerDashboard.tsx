@@ -58,7 +58,7 @@ interface ReportRow {
   reported_post_id: string | null;
 }
 
-type ActiveView = 'overview' | 'users' | 'posts' | 'reports';
+type ActiveView = 'overview' | 'users' | 'posts' | 'reports' | 'payments';
 
 // ─── Management Sections ─────────────────────────────────────────────────────
 const managementSections = [
@@ -193,6 +193,17 @@ export default function OwnerDashboard() {
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportFilter, setReportFilter] = useState<'pending' | 'resolved' | 'dismissed'>('pending');
 
+  // Payments state
+  const [receipts, setReceipts] = useState<any[]>([]);
+  const [receiptsLoading, setReceiptsLoading] = useState(false);
+  const [receiptFilter, setReceiptFilter] = useState<'pending_verification' | 'approved' | 'rejected'>('pending_verification');
+  const [pendingReceiptsCount, setPendingReceiptsCount] = useState(0);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [bankForm, setBankForm] = useState({ account_holder: '', bank_name: '', account_number: '', rib: '', iban: '', swift_code: '', instructions: '' });
+  const [bankFormLoading, setBankFormLoading] = useState(false);
+  const [bankSaving, setBankSaving] = useState(false);
+
   // UI state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [confirm, setConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -320,12 +331,127 @@ export default function OwnerDashboard() {
     }
   }, [ownerFetch]);
 
+  // ── Load Receipts ──
+  const loadReceipts = useCallback(async (status: string) => {
+    setReceiptsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('payment_receipts')
+        .select(`
+          *,
+          subscriptions (plan_name, amount_mad, amount_usd, payment_method),
+          user_profiles!payment_receipts_user_id_fkey (username, full_name, email)
+        `)
+        .eq('status', status)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (!error && data) setReceipts(data);
+    } catch {
+      showToast('Failed to load receipts', 'error');
+    } finally {
+      setReceiptsLoading(false);
+    }
+  }, [supabase]);
+
+  // ── Load pending receipts count ──
+  const loadPendingReceiptsCount = useCallback(async () => {
+    const { count } = await supabase
+      .from('payment_receipts')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending_verification');
+    setPendingReceiptsCount(count ?? 0);
+  }, [supabase]);
+
+  // ── Load Bank Details ──
+  const loadBankDetails = useCallback(async () => {
+    setBankFormLoading(true);
+    try {
+      const { data } = await supabase
+        .from('bank_transfer_details')
+        .select('*')
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+      if (data) setBankForm({
+        account_holder: data.account_holder || '',
+        bank_name: data.bank_name || '',
+        account_number: data.account_number || '',
+        rib: data.rib || '',
+        iban: data.iban || '',
+        swift_code: data.swift_code || '',
+        instructions: data.instructions || '',
+      });
+    } catch { /* no bank details yet */ } finally {
+      setBankFormLoading(false);
+    }
+  }, [supabase]);
+
+  // ── Save Bank Details ──
+  const saveBankDetails = async () => {
+    setBankSaving(true);
+    try {
+      const { data: existing } = await supabase
+        .from('bank_transfer_details')
+        .select('id')
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+
+      if (existing) {
+        await supabase.from('bank_transfer_details').update({ ...bankForm, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      } else {
+        await supabase.from('bank_transfer_details').insert({ ...bankForm, currency: 'MAD', is_active: true });
+      }
+      showToast('تم حفظ معلومات البنك بنجاح', 'success');
+    } catch {
+      showToast('فشل حفظ المعلومات', 'error');
+    } finally {
+      setBankSaving(false);
+    }
+  };
+
+  // ── Handle Receipt Action ──
+  const handleReceiptAction = async (receiptId: string, subscriptionId: string, action: 'approve' | 'reject') => {
+    const key = `receipt_${receiptId}`;
+    setActionLoading(key);
+    try {
+      const res = await ownerFetch('/api/payments/verify-receipt', {
+        method: 'POST',
+        body: JSON.stringify({
+          receipt_id: receiptId,
+          subscription_id: subscriptionId,
+          action,
+          rejection_reason: action === 'reject' ? rejectReason : undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+      showToast(json.message, 'success');
+      setRejectingId(null);
+      setRejectReason('');
+      await loadReceipts(receiptFilter);
+      await loadPendingReceiptsCount();
+    } catch (err: any) {
+      showToast(err.message || 'Action failed', 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // ── View switching ──
   useEffect(() => {
     if (activeView === 'users') loadUsers(userPage, userSearch);
     if (activeView === 'posts') loadPosts(postPage);
     if (activeView === 'reports') loadReports(reportFilter);
+    if (activeView === 'payments') {
+      loadReceipts(receiptFilter);
+      loadBankDetails();
+    }
   }, [activeView]);
+
+  useEffect(() => {
+    loadPendingReceiptsCount();
+  }, [loadPendingReceiptsCount]);
 
   // ── Toast helper ──
   const showToast = (message: string, type: 'success' | 'error') => {
@@ -502,6 +628,7 @@ export default function OwnerDashboard() {
             { id: 'users', label: 'Users', icon: 'UsersIcon' },
             { id: 'posts', label: 'Posts', icon: 'DocumentTextIcon' },
             { id: 'reports', label: 'Reports', icon: 'FlagIcon', badge: stats?.pending_reports },
+            { id: 'payments', label: 'Payments', icon: 'BanknotesIcon', badge: pendingReceiptsCount },
           ] as const).map((tab) => (
             <button key={tab.id}
               onClick={() => setActiveView(tab.id as ActiveView)}
@@ -930,6 +1057,227 @@ export default function OwnerDashboard() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* ── PAYMENTS VIEW ── */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {activeView === 'payments' && (
+          <div className="space-y-6">
+            {/* ── Bank Details Config ── */}
+            <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(52,211,153,0.15)' }}>
+                  <Icon name="BuildingLibraryIcon" size={16} style={{ color: '#34d399' }} />
+                </div>
+                <h3 className="text-sm font-bold text-white">معلومات التحويل البنكي</h3>
+              </div>
+              {bankFormLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-6 h-6 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+                </div>
+              ) : (
+                <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[
+                    { key: 'account_holder', label: 'صاحب الحساب', placeholder: 'hnChat Platform' },
+                    { key: 'bank_name', label: 'اسم البنك', placeholder: 'Attijariwafa Bank' },
+                    { key: 'account_number', label: 'رقم الحساب', placeholder: '007 780 ...' },
+                    { key: 'rib', label: 'RIB', placeholder: '007780...' },
+                    { key: 'iban', label: 'IBAN', placeholder: 'MA64...' },
+                    { key: 'swift_code', label: 'SWIFT', placeholder: 'BCMAMAMC' },
+                  ].map(({ key, label, placeholder }) => (
+                    <div key={key}>
+                      <label className="text-xs text-slate-500 block mb-1.5">{label}</label>
+                      <input
+                        value={(bankForm as any)[key]}
+                        onChange={(e) => setBankForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                        placeholder={placeholder}
+                        className="w-full px-3 py-2.5 rounded-xl text-sm text-white placeholder-slate-700 outline-none focus:ring-1 focus:ring-amber-500"
+                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+                      />
+                    </div>
+                  ))}
+                  <div className="sm:col-span-2">
+                    <label className="text-xs text-slate-500 block mb-1.5">تعليمات للمستخدم</label>
+                    <textarea
+                      value={bankForm.instructions}
+                      onChange={(e) => setBankForm((prev) => ({ ...prev, instructions: e.target.value }))}
+                      placeholder="يرجى تحويل المبلغ وإرفاق إيصال..."
+                      rows={2}
+                      className="w-full px-3 py-2.5 rounded-xl text-sm text-white placeholder-slate-700 outline-none focus:ring-1 focus:ring-amber-500 resize-none"
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <button onClick={saveBankDetails} disabled={bankSaving}
+                      className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50"
+                      style={{ background: 'linear-gradient(135deg, #34d399, #059669)', color: '#0a0a0f' }}>
+                      {bankSaving ? 'جاري الحفظ...' : 'حفظ المعلومات'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Receipts Management ── */}
+            <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div className="px-5 py-4 flex items-center justify-between flex-wrap gap-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(251,191,36,0.15)' }}>
+                    <Icon name="DocumentCheckIcon" size={16} style={{ color: '#fbbf24' }} />
+                  </div>
+                  <h3 className="text-sm font-bold text-white">إيصالات الدفع</h3>
+                </div>
+                <div className="flex gap-2">
+                  {([
+                    { id: 'pending_verification', label: 'قيد المراجعة', color: '#60a5fa' },
+                    { id: 'approved', label: 'مقبول', color: '#34d399' },
+                    { id: 'rejected', label: 'مرفوض', color: '#f87171' },
+                  ] as const).map((f) => (
+                    <button key={f.id}
+                      onClick={() => { setReceiptFilter(f.id); loadReceipts(f.id); }}
+                      className="px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
+                      style={{
+                        background: receiptFilter === f.id ? `${f.color}18` : 'rgba(255,255,255,0.04)',
+                        border: `1px solid ${receiptFilter === f.id ? `${f.color}44` : 'rgba(255,255,255,0.07)'}`,
+                        color: receiptFilter === f.id ? f.color : '#78716c',
+                      }}>
+                      {f.label}
+                      {f.id === 'pending_verification' && pendingReceiptsCount > 0 && (
+                        <span className="mr-1 text-xs px-1 py-0.5 rounded-full font-bold"
+                          style={{ background: 'rgba(248,113,113,0.2)', color: '#f87171' }}>
+                          {pendingReceiptsCount}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {receiptsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-8 h-8 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+                </div>
+              ) : receipts.length === 0 ? (
+                <p className="text-center text-sm py-12" style={{ color: '#57534e' }}>لا توجد إيصالات</p>
+              ) : (
+                <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+                  {receipts.map((receipt) => {
+                    const profile = receipt.user_profiles;
+                    const sub = receipt.subscriptions;
+                    const isRejecting = rejectingId === receipt.id;
+                    return (
+                      <div key={receipt.id} className="px-5 py-4 hover:bg-white/[0.015] transition-all">
+                        <div className="flex items-start gap-4 flex-wrap">
+                          {/* User info */}
+                          <div className="flex-1 min-w-[200px] space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-semibold text-white">
+                                {profile?.full_name || profile?.username || 'مستخدم'}
+                              </span>
+                              <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                                style={{
+                                  background: sub?.payment_method === 'paypal' ? 'rgba(0,112,243,0.15)' : 'rgba(52,211,153,0.1)',
+                                  color: sub?.payment_method === 'paypal' ? '#60a5fa' : '#34d399',
+                                  border: `1px solid ${sub?.payment_method === 'paypal' ? 'rgba(0,112,243,0.3)' : 'rgba(52,211,153,0.25)'}`,
+                                }}>
+                                {sub?.payment_method === 'paypal' ? 'PayPal' : 'تحويل بنكي'}
+                              </span>
+                            </div>
+                            <p className="text-xs" style={{ color: '#78716c' }}>
+                              {profile?.email} · خطة {sub?.plan_name} ·{' '}
+                              {sub?.payment_method === 'paypal'
+                                ? `$${sub?.amount_usd} USD`
+                                : `${sub?.amount_mad} درهم`}
+                            </p>
+                            {receipt.transfer_reference && (
+                              <p className="text-xs font-mono" style={{ color: '#94a3b8' }}>
+                                Ref: {receipt.transfer_reference}
+                              </p>
+                            )}
+                            {receipt.notes && (
+                              <p className="text-xs italic" style={{ color: '#64748b' }}>{receipt.notes}</p>
+                            )}
+                            <p className="text-xs" style={{ color: '#44403c' }}>
+                              {new Date(receipt.created_at).toLocaleString('ar-MA')}
+                            </p>
+                          </div>
+
+                          {/* Receipt preview */}
+                          <div className="flex items-center gap-3">
+                            <a
+                              href={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/authenticated/payment-receipts/${receipt.receipt_url}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-80"
+                              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}>
+                              <Icon name="DocumentArrowDownIcon" size={14} />
+                              عرض الإيصال
+                            </a>
+                          </div>
+
+                          {/* Actions */}
+                          {receiptFilter === 'pending_verification' && (
+                            <div className="flex flex-col gap-2 flex-shrink-0">
+                              {isRejecting ? (
+                                <div className="space-y-2">
+                                  <input
+                                    value={rejectReason}
+                                    onChange={(e) => setRejectReason(e.target.value)}
+                                    placeholder="سبب الرفض..."
+                                    className="w-full px-3 py-2 rounded-xl text-xs text-white placeholder-slate-600 outline-none"
+                                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(248,113,113,0.3)' }}
+                                  />
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => handleReceiptAction(receipt.id, receipt.subscription_id, 'reject')}
+                                      disabled={actionLoading !== null}
+                                      className="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                                      style={{ background: 'rgba(248,113,113,0.15)', color: '#f87171', border: '1px solid rgba(248,113,113,0.3)' }}>
+                                      تأكيد الرفض
+                                    </button>
+                                    <button onClick={() => { setRejectingId(null); setRejectReason(''); }}
+                                      className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white transition-all"
+                                      style={{ background: 'rgba(255,255,255,0.05)' }}>
+                                      إلغاء
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleReceiptAction(receipt.id, receipt.subscription_id, 'approve')}
+                                    disabled={actionLoading !== null}
+                                    className="px-3 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105 disabled:opacity-50"
+                                    style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399', border: '1px solid rgba(52,211,153,0.3)' }}>
+                                    ✓ قبول
+                                  </button>
+                                  <button
+                                    onClick={() => setRejectingId(receipt.id)}
+                                    disabled={actionLoading !== null}
+                                    className="px-3 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105 disabled:opacity-50"
+                                    style={{ background: 'rgba(248,113,113,0.1)', color: '#f87171', border: '1px solid rgba(248,113,113,0.25)' }}>
+                                    ✕ رفض
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {receiptFilter === 'rejected' && receipt.rejection_reason && (
+                            <div className="text-xs px-3 py-2 rounded-xl"
+                              style={{ background: 'rgba(248,113,113,0.08)', color: '#f87171', border: '1px solid rgba(248,113,113,0.2)' }}>
+                              {receipt.rejection_reason}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
