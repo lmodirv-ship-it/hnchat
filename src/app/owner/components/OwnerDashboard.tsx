@@ -117,8 +117,21 @@ export default function OwnerDashboard() {
 
   const checkOwnerAccess = async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) { router.replace('/owner-login'); return; }
-    if (session.user.email !== OWNER_EMAIL) { router.replace('/home-feed'); return; }
+
+    // Allow access if authenticated as owner OR if owner_access flag is set in sessionStorage
+    const hasSessionAccess = session?.user?.email === OWNER_EMAIL;
+    const hasDirectAccess = typeof window !== 'undefined' && sessionStorage.getItem('owner_access') === 'granted';
+
+    if (!session?.user && !hasDirectAccess) {
+      router.replace('/owner-login');
+      return;
+    }
+
+    if (session?.user && !hasSessionAccess) {
+      router.replace('/home-feed');
+      return;
+    }
+
     await fetch('/api/owner-setup', { method: 'POST' });
     await loadAllData();
     setLoading(false);

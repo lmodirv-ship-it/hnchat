@@ -26,6 +26,7 @@ export default function OwnerLoginPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (email.trim().toLowerCase() === OWNER_EMAIL.toLowerCase()) {
+      sessionStorage.setItem('owner_access', 'granted');
       router.replace('/owner');
     } else {
       setErrorMsg('Access denied. This email is not authorized.');
