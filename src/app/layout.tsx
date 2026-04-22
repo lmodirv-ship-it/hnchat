@@ -8,10 +8,13 @@ import { Suspense } from 'react';
 import GoogleAnalytics from '@/components/GoogleAnalytics';
 import AdSenseScript from '@/components/AdSenseScript';
 import { organizationSchema, webApplicationSchema, faqSchema, softwareAppSchema } from '@/components/SchemaOrg';
+import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#00d2ff',
 };
 
 export const metadata: Metadata = {
@@ -91,7 +94,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="ar" dir="ltr">
       <head>
         {/* Primary structured data: WebApplication */}
         <script
@@ -115,9 +118,15 @@ export default function RootLayout({
         />
         {/* AdSense */}
         <AdSenseScript />
-      
-      <script type="module" async src="https://static.rocket.new/rocket-web.js?_cfg=https%3A%2F%2Fhnchat7959back.builtwithrocket.new&_be=https%3A%2F%2Fappanalytics.rocket.new&_v=0.1.18" />
-      <script type="module" defer src="https://static.rocket.new/rocket-shot.js?v=0.0.2" /></head>
+        {/* PWA meta tags */}
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="hnChat" />
+        <link rel="apple-touch-icon" href="/assets/images/app_logo.png" />
+
+        <script type="module" async src="https://static.rocket.new/rocket-web.js?_cfg=https%3A%2F%2Fhnchat7959back.builtwithrocket.new&_be=https%3A%2F%2Fappanalytics.rocket.new&_v=0.1.18" />
+        <script type="module" defer src="https://static.rocket.new/rocket-shot.js?v=0.0.2" /></head>
       <body>
         <Suspense fallback={null}>
           <GoogleAnalytics />
@@ -126,6 +135,7 @@ export default function RootLayout({
           <PushNotificationProvider>
             <PushStrategyProvider>
               {children}
+              <PWAInstallPrompt />
             </PushStrategyProvider>
           </PushNotificationProvider>
         </AuthProvider>

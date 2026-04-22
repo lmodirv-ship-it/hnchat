@@ -1,6 +1,8 @@
 'use client';
 import React, { useState, useRef, useEffect } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { useChat } from '@/lib/hooks/useChat';
+import toast from 'react-hot-toast';
 
 interface Message {
   id: number;
@@ -18,22 +20,11 @@ const suggestions = [
   '💡 Give me content ideas for today',
 ];
 
-const aiResponses: Record<string, string> = {
-  default: "I'm **hnChat AI** — your diamond-grade intelligent assistant! I can help you create content, analyze trends, generate ideas, write captions, and much more. What would you like to explore today? ✨",
-  generate: "Here's a stunning diamond-themed post for you:\n\n💎 **\"In a world of ordinary, be extraordinary. Like a diamond formed under pressure, your brilliance shines brightest when you push through challenges. Keep shining. Keep growing. The world needs your light.\"** ✨\n\n#DiamondMindset #hnChat #FutureIsNow",
-  caption: "Here are 3 viral caption ideas:\n\n1. **\"Not all that glitters is gold — some of it is diamond 💎\"**\n2. **\"Living in the future, one pixel at a time ⚡\"**\n3. **\"Your vibe is your brand. Make it diamond-grade. ✨\"**\n\nWhich one resonates with you?",
-  analyze: "📊 **Profile Performance Analysis:**\n\n• **Engagement Rate:** 8.4% (Above average ✅)\n• **Best posting time:** 7-9 PM\n• **Top content:** Videos (3x more reach)\n• **Growth trend:** +24% this month 🚀\n• **Recommendation:** Post more short videos for maximum reach!",
-  ideas: "💡 **Today's Content Ideas:**\n\n1. 🎬 Behind-the-scenes of your daily routine\n2. 💎 \"Diamond tip\" series — share expertise\n3. 🤖 AI-generated art showcase\n4. 🎵 Create a trending sound challenge\n5. 📸 Crystal aesthetic photo dump\n\nWant me to expand on any of these?",
-};
+const SYSTEM_PROMPT = `You are hnChat AI — a diamond-grade intelligent assistant for the hnChat social platform. 
+You help users create content, write captions, generate post ideas, analyze trends, and grow their social presence.
+Be creative, concise, and use emojis where appropriate. Respond in the same language the user writes in (Arabic or English).`;
 
-function getAIResponse(input: string): string {
-  const lower = input.toLowerCase();
-  if (lower.includes('generat') || lower.includes('post') || lower.includes('diamond')) return aiResponses.generate;
-  if (lower.includes('caption') || lower.includes('write')) return aiResponses.caption;
-  if (lower.includes('analyz') || lower.includes('perform') || lower.includes('profile')) return aiResponses.analyze;
-  if (lower.includes('idea') || lower.includes('content') || lower.includes('today')) return aiResponses.ideas;
-  return `Great question! Based on your request about **"${input}"**, here's what I suggest:\n\nAs your diamond-grade AI assistant, I can help you craft the perfect response, generate creative content, or analyze data. The key is to approach this with a crystal-clear strategy:\n\n1. **Define your goal** — What outcome do you want?\n2. **Know your audience** — Who are you speaking to?\n3. **Create with intention** — Every word should sparkle ✨\n\nWould you like me to dive deeper into any of these points?`;
-}
+const WELCOME_MSG = "I'm **hnChat AI** — your diamond-grade intelligent assistant! I can help you create content, analyze trends, generate ideas, write captions, and much more. What would you like to explore today? ✨";
 
 function formatMessage(text: string) {
   return text.split('\n').map((line, i) => {
@@ -46,29 +37,68 @@ function formatMessage(text: string) {
 
 export default function AIAssistantScreen() {
   const [messages, setMessages] = useState<Message[]>([
-    { id: 1, role: 'assistant', content: aiResponses.default, time: 'Now' }
+    { id: 1, role: 'assistant', content: WELCOME_MSG, time: 'Now' }
   ]);
   const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
   const [activeMode, setActiveMode] = useState<'chat' | 'image' | 'code'>('chat');
+  const [conversationHistory, setConversationHistory] = useState<Array<{ role: string; content: string }>>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const { response, isLoading, error, sendMessage } = useChat('OPEN_AI', 'gpt-4.1-mini', true);
+
+  useEffect(() => {
+    if (error) toast.error('AI service unavailable. Please try again.');
+  }, [error]);
+
+  // When streaming response updates, update the last assistant message
+  useEffect(() => {
+    if (response && isLoading) {
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last?.role === 'assistant' && last.id === -1) {
+          return [...prev.slice(0, -1), { ...last, content: response }];
+        }
+        return prev;
+      });
+    }
+  }, [response, isLoading]);
+
+  // When streaming completes, finalize the message and update history
+  useEffect(() => {
+    if (response && !isLoading) {
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last?.role === 'assistant' && last.id === -1) {
+          const finalMsg = { ...last, id: Date.now(), content: response };
+          return [...prev.slice(0, -1), finalMsg];
+        }
+        return prev;
+      });
+      setConversationHistory(prev => [...prev, { role: 'assistant', content: response }]);
+    }
+  }, [isLoading]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
+  }, [messages, isLoading]);
 
-  const sendMessage = (text?: string) => {
+  const sendMsg = (text?: string) => {
     const msg = text || input;
-    if (!msg.trim()) return;
+    if (!msg.trim() || isLoading) return;
+
     const userMsg: Message = { id: Date.now(), role: 'user', content: msg, time: 'Now' };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages(prev => [...prev, userMsg, { id: -1, role: 'assistant', content: '...', time: 'Now' }]);
     setInput('');
-    setIsTyping(true);
-    setTimeout(() => {
-      const aiMsg: Message = { id: Date.now() + 1, role: 'assistant', content: getAIResponse(msg), time: 'Now' };
-      setMessages(prev => [...prev, aiMsg]);
-      setIsTyping(false);
-    }, 1200);
+
+    const newHistory = [...conversationHistory, { role: 'user', content: msg }];
+    setConversationHistory(newHistory);
+
+    const apiMessages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...newHistory,
+    ];
+
+    sendMessage(apiMessages, { max_completion_tokens: 1024 });
   };
 
   return (
@@ -105,8 +135,9 @@ export default function AIAssistantScreen() {
           <p className="text-xs font-600 uppercase tracking-widest mb-2" style={{ color: 'rgba(0,210,255,0.5)' }}>Quick Actions</p>
           <div className="space-y-1.5">
             {suggestions.map(s => (
-              <button key={s} onClick={() => sendMessage(s)}
-                className="w-full text-left px-3 py-2.5 rounded-xl text-xs font-500 text-slate-400 transition-all duration-200 hover:text-slate-200 hover:bg-white/05"
+              <button key={s} onClick={() => sendMsg(s)}
+                disabled={isLoading}
+                className="w-full text-left px-3 py-2.5 rounded-xl text-xs font-500 text-slate-400 transition-all duration-200 hover:text-slate-200 hover:bg-white/05 disabled:opacity-40"
                 style={{ border: '1px solid rgba(255,255,255,0.05)' }}>
                 {s}
               </button>
@@ -148,13 +179,20 @@ export default function AIAssistantScreen() {
             <h3 className="font-700 text-slate-100 text-sm">hnChat AI Assistant</h3>
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-slate-500 text-xs">Online · Diamond Intelligence v3.0</span>
+              <span className="text-slate-500 text-xs">
+                {isLoading ? 'Thinking...' : 'Online · GPT-4.1 Mini'}
+              </span>
             </div>
           </div>
           <div className="ml-auto flex gap-2">
-            <button className="w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 hover:bg-white/08"
-              style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
-              <Icon name="TrashIcon" size={14} className="text-slate-500" onClick={() => setMessages([{ id: 1, role: 'assistant', content: aiResponses.default, time: 'Now' }])} />
+            <button
+              className="w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 hover:bg-white/08"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+              onClick={() => {
+                setMessages([{ id: 1, role: 'assistant', content: WELCOME_MSG, time: 'Now' }]);
+                setConversationHistory([]);
+              }}>
+              <Icon name="TrashIcon" size={14} className="text-slate-500" />
             </button>
           </div>
         </div>
@@ -173,23 +211,17 @@ export default function AIAssistantScreen() {
                 style={msg.role === 'assistant'
                   ? { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#cbd5e1' }
                   : { background: 'linear-gradient(135deg, rgba(0,210,255,0.15), rgba(155,89,255,0.15))', border: '1px solid rgba(0,210,255,0.2)', color: '#e2e8f0' }}>
-                {formatMessage(msg.content)}
+                {msg.id === -1 && msg.content === '...' ? (
+                  <div className="flex items-center gap-1">
+                    {[0, 1, 2].map(i => (
+                      <span key={i} className="w-2 h-2 rounded-full animate-bounce"
+                        style={{ background: '#00d2ff', animationDelay: `${i * 0.15}s` }} />
+                    ))}
+                  </div>
+                ) : formatMessage(msg.content)}
               </div>
             </div>
           ))}
-          {isTyping && (
-            <div className="flex gap-3">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center text-lg"
-                style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)' }}>🤖</div>
-              <div className="px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-1"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                {[0, 1, 2].map(i => (
-                  <span key={i} className="w-2 h-2 rounded-full"
-                    style={{ background: '#00d2ff', animation: `pulse-live ${0.6 + i * 0.2}s infinite alternate` }} />
-                ))}
-              </div>
-            </div>
-          )}
           <div ref={bottomRef} />
         </div>
 
@@ -200,23 +232,26 @@ export default function AIAssistantScreen() {
               <input
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMsg()}
                 placeholder="Ask hnChat AI anything..."
-                className="w-full px-4 py-3 pr-12 rounded-2xl text-sm text-slate-200 outline-none placeholder-slate-600 transition-all duration-200"
+                disabled={isLoading}
+                className="w-full px-4 py-3 pr-12 rounded-2xl text-sm text-slate-200 outline-none placeholder-slate-600 transition-all duration-200 disabled:opacity-60"
                 style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: input ? '0 0 0 2px rgba(0,210,255,0.15)' : 'none' }}
               />
               <button className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
                 <Icon name="MicrophoneIcon" size={16} />
               </button>
             </div>
-            <button onClick={() => sendMessage()}
-              disabled={!input.trim()}
+            <button onClick={() => sendMsg()}
+              disabled={!input.trim() || isLoading}
               className="w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-200 disabled:opacity-40 hover:scale-105"
               style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', boxShadow: '0 0 16px rgba(0,210,255,0.3)' }}>
-              <Icon name="PaperAirplaneIcon" size={18} className="text-ice-black" />
+              {isLoading
+                ? <Icon name="ArrowPathIcon" size={18} className="text-ice-black animate-spin" />
+                : <Icon name="PaperAirplaneIcon" size={18} className="text-ice-black" />}
             </button>
           </div>
-          <p className="text-center text-slate-600 text-xs mt-2">hnChat AI · Diamond Intelligence · Always learning ✨</p>
+          <p className="text-center text-slate-600 text-xs mt-2">hnChat AI · Powered by GPT-4.1 Mini · Always learning ✨</p>
         </div>
       </div>
     </div>
