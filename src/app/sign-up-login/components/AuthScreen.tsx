@@ -38,6 +38,7 @@ export default function AuthScreen() {
   const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const loginForm = useForm<LoginForm>({ defaultValues: { email: '', password: '', remember: false } });
   const signupForm = useForm<SignupForm>({ defaultValues: { fullName: '', username: '', email: '', password: '', confirmPassword: '', terms: false } });
@@ -96,6 +97,27 @@ export default function AuthScreen() {
     } catch (err: any) {
       toast.error(err.message || 'Google sign-in failed. Please try again.');
       setGoogleLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const email = loginForm.getValues('email');
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+      toast.error('Please enter your email address first, then click Forgot password.');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${siteUrl}/auth/callback?next=/preferences`,
+      });
+      if (error) throw error;
+      toast.success('Password reset email sent! Check your inbox.');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to send reset email. Please try again.');
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -325,8 +347,13 @@ export default function AuthScreen() {
                     />
                     <span className="text-sm text-slate-400">Remember me</span>
                   </label>
-                  <button type="button" className="text-sm text-cyan-glow hover:underline">
-                    Forgot password?
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    disabled={forgotLoading}
+                    className="text-sm text-cyan-glow hover:underline disabled:opacity-60"
+                  >
+                    {forgotLoading ? 'Sending...' : 'Forgot password?'}
                   </button>
                 </div>
 
@@ -435,9 +462,9 @@ export default function AuthScreen() {
                   />
                   <span className="text-xs text-slate-400">
                     I agree to hnChat{' '}
-                    <button type="button" className="text-cyan-glow hover:underline">Terms of Service</button>
+                    <button type="button" onClick={() => router.push('/terms-of-service')} className="text-cyan-glow hover:underline">Terms of Service</button>
                     {' '}and{' '}
-                    <button type="button" className="text-cyan-glow hover:underline">Privacy Policy</button>
+                    <button type="button" onClick={() => router.push('/privacy-policy')} className="text-cyan-glow hover:underline">Privacy Policy</button>
                   </span>
                 </label>
                 {signupForm.formState.errors.terms && (
