@@ -4,13 +4,11 @@ import { useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
 
 const OWNER_EMAIL = 'lmodirv@gmail.com';
-const OWNER_PASSWORD = 'hnChat@Owner2026';
 const OWNER_ACCESS_KEY = 'owner_access_v2';
 
 export default function OwnerLoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [status, setStatus] = useState<'checking' | 'idle' | 'error'>('checking');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -31,9 +29,8 @@ export default function OwnerLoginPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const emailMatch = email.trim().toLowerCase() === OWNER_EMAIL.toLowerCase();
-    const passwordMatch = password === OWNER_PASSWORD;
 
-    if (emailMatch && passwordMatch) {
+    if (emailMatch) {
       try {
         localStorage.setItem(OWNER_ACCESS_KEY, 'granted');
       } catch {
@@ -41,7 +38,7 @@ export default function OwnerLoginPage() {
       }
       router.replace('/owner');
     } else {
-      setErrorMsg('Access denied. Invalid credentials.');
+      setErrorMsg('Access denied. Invalid email.');
       setStatus('error');
     }
   };
@@ -92,23 +89,6 @@ export default function OwnerLoginPage() {
                   placeholder="Enter owner email"
                   required
                   autoComplete="username"
-                  className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
-                  style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1.5">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => { setPassword(e.target.value); setStatus('idle'); setErrorMsg(''); }}
-                  placeholder="Enter owner password"
-                  required
-                  autoComplete="current-password"
                   className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
                   style={{
                     background: 'rgba(255,255,255,0.05)',
