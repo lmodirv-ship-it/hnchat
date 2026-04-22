@@ -77,6 +77,7 @@ $$;
 -- ============================================================
 -- 4. FUNCTION: GET ADMIN ANALYTICS (updated with reports)
 -- ============================================================
+DROP FUNCTION IF EXISTS public.get_admin_analytics();
 CREATE OR REPLACE FUNCTION public.get_admin_analytics()
 RETURNS jsonb
 LANGUAGE plpgsql
