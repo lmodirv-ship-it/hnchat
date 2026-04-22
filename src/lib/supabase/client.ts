@@ -18,8 +18,10 @@ const canUseCookies = (() => {
 const fromCookies = () =>
   typeof document === 'undefined' ? [] :
   document.cookie.split(';').filter(Boolean).map((c) => {
-    const [name, ...rest] = c.trim().split('=');
-    return { name: name.trim(), value: decodeURIComponent(rest.join('=')) };
+    const eqIndex = c.trim().indexOf('=');
+    const name = eqIndex >= 0 ? c.trim().slice(0, eqIndex) : c.trim();
+    const value = eqIndex >= 0 ? decodeURIComponent(c.trim().slice(eqIndex + 1)) : '';
+    return { name: name.trim(), value };
   }).filter((c) => c.name);
 
 const fromStorage = () => {
