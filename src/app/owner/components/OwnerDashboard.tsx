@@ -65,9 +65,9 @@ const managementSections = [
     title: 'Core Management',
     items: [
       { label: 'Admin Dashboard', icon: 'ChartBarSquareIcon', href: '/admin', color: '#00d2ff', desc: 'Main control panel' },
-      { label: 'Manage Users', icon: 'UsersIcon', href: '/admin/users', color: '#a78bfa', desc: 'Ban, delete, promote' },
-      { label: 'Manage Posts', icon: 'DocumentTextIcon', href: '/admin/posts', color: '#34d399', desc: 'Moderate content' },
-      { label: 'Reports', icon: 'FlagIcon', href: '/admin/reports', color: '#f87171', desc: 'Review flagged content' },
+      { label: 'Manage Users', icon: 'UsersIcon', href: '/owner/users', color: '#a78bfa', desc: 'Ban, delete, promote' },
+      { label: 'Manage Content', icon: 'DocumentTextIcon', href: '/owner/content', color: '#34d399', desc: 'Moderate posts' },
+      { label: 'Reports', icon: 'FlagIcon', href: '/owner/reports', color: '#f87171', desc: 'Review flagged content' },
     ],
   },
   {
@@ -84,7 +84,7 @@ const managementSections = [
     items: [
       { label: 'Email Dashboard', icon: 'EnvelopeIcon', href: '/email-dashboard', color: '#60a5fa', desc: 'Email campaigns' },
       { label: 'Ads Manager', icon: 'MegaphoneIcon', href: '/ads-manager', color: '#e879f9', desc: 'Ad campaigns' },
-      { label: 'Ads & Promo', icon: 'SparklesIcon', href: '/ads-promo', color: '#fde68a', desc: 'Promotions' },
+      { label: 'Payments', icon: 'BanknotesIcon', href: '/owner/payments', color: '#fde68a', desc: 'Receipts & bank details' },
       { label: 'Marketplace', icon: 'ShoppingBagIcon', href: '/marketplace', color: '#6ee7b7', desc: 'Product listings' },
     ],
   },
@@ -94,7 +94,7 @@ const managementSections = [
       { label: 'Home Feed', icon: 'HomeIcon', href: '/home-feed', color: '#94a3b8', desc: 'Main social feed' },
       { label: 'Short Videos', icon: 'FilmIcon', href: '/short-videos', color: '#c084fc', desc: 'Video content' },
       { label: 'Voice Rooms', icon: 'MicrophoneIcon', href: '/voice-rooms', color: '#67e8f9', desc: 'Live audio' },
-      { label: 'AI Assistant', icon: 'CpuChipIcon', href: '/ai-assistant', color: '#86efac', desc: 'AI features' },
+      { label: 'Site Settings', icon: 'Cog6ToothIcon', href: '/owner/settings', color: '#86efac', desc: 'Platform configuration' },
     ],
   },
 ];
