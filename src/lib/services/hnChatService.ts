@@ -122,6 +122,27 @@ export const postService = {
 
       if (!error) {
         await supabase.rpc('increment_post_likes', { post_uuid: postId });
+
+        // Create notification for post owner
+        try {
+          const { data: postData } = await supabase
+            .from('posts')
+            .select('user_id')
+            .eq('id', postId)
+            .single();
+
+          if (postData && postData.user_id !== user.id) {
+            await supabase.from('notifications').insert({
+              user_id: postData.user_id,
+              actor_id: user.id,
+              notification_type: 'like',
+              post_id: postId,
+              message: 'liked your post',
+            });
+          }
+        } catch {
+          // Silent fail for notification
+        }
       }
       return !error;
     } catch (err: any) {
@@ -248,7 +269,7 @@ export const postService = {
     try {
       const { data, error } = await supabase
         .from('comments')
-        .insert({ post_id: postId, user_id: user.id, content })
+        .insert({ post_id: postId, user_id: user.id, content, parent_id: null })
         .select(`*, user_profiles(id, username, full_name, avatar_url, is_verified)`)
         .single();
 
@@ -257,11 +278,30 @@ export const postService = {
         return null;
       }
 
-      // Increment comments count using raw SQL via RPC-style update
-      await supabase
-        .from('posts')
-        .update({ comments_count: (await supabase.from('posts').select('comments_count').eq('id', postId).single()).data?.comments_count + 1 || 1 })
-        .eq('id', postId);
+      // Increment comments count using dedicated RPC
+      await supabase.rpc('increment_post_comments', { post_uuid: postId });
+
+      // Create notification for post owner
+      try {
+        const { data: postData } = await supabase
+          .from('posts')
+          .select('user_id')
+          .eq('id', postId)
+          .single();
+
+        if (postData && postData.user_id !== user.id) {
+          await supabase.from('notifications').insert({
+            user_id: postData.user_id,
+            actor_id: user.id,
+            notification_type: 'comment',
+            post_id: postId,
+            comment_id: data?.id || null,
+            message: 'commented on your post',
+          });
+        }
+      } catch {
+        // Silent fail for notification
+      }
 
       return data;
     } catch (err: any) {
@@ -631,6 +671,19 @@ export const messageService = {
         if (isSchemaError(error)) throw error;
         return null;
       }
+
+      // Create message notification for receiver
+      try {
+        await supabase.from('notifications').insert({
+          user_id: receiverId,
+          actor_id: user.id,
+          notification_type: 'message',
+          message: 'sent you a message',
+        });
+      } catch {
+        // Silent fail for notification
+      }
+
       return data;
     } catch (err: any) {
       console.log('messageService.sendMessage error:', err.message);
@@ -834,13 +887,16 @@ export const notificationService = {
   }) {
     const supabase = createClient();
     try {
-      await supabase.rpc('create_notification', {
-        p_user_id: params.userId,
-        p_actor_id: params.actorId,
-        p_type: params.type,
-        p_post_id: params.postId || null,
-        p_comment_id: params.commentId || null,
-        p_message: params.message || '',
+      // Don't notify yourself
+      if (params.userId === params.actorId) return;
+
+      await supabase.from('notifications').insert({
+        user_id: params.userId,
+        actor_id: params.actorId,
+        notification_type: params.type,
+        post_id: params.postId || null,
+        comment_id: params.commentId || null,
+        message: params.message || '',
       });
     } catch (err: any) {
       console.log('notificationService.createNotification error:', err.message);
@@ -862,11 +918,23 @@ export const followService = {
         .insert({ follower_id: user.id, following_id: targetUserId });
 
       if (!error) {
-        // Update counts
-        await Promise.all([
-          supabase.from('user_profiles').update({ following_count: supabase.rpc('increment' as any) }).eq('id', user.id),
-          supabase.from('user_profiles').update({ followers_count: supabase.rpc('increment' as any) }).eq('id', targetUserId),
-        ]);
+        // Update counts using dedicated RPC
+        await supabase.rpc('increment_follow_counts', {
+          p_follower_id: user.id,
+          p_following_id: targetUserId,
+        });
+
+        // Create follow notification
+        try {
+          await supabase.from('notifications').insert({
+            user_id: targetUserId,
+            actor_id: user.id,
+            notification_type: 'follow',
+            message: 'started following you',
+          });
+        } catch {
+          // Silent fail for notification
+        }
       }
       return !error;
     } catch (err: any) {
@@ -887,6 +955,12 @@ export const followService = {
         .eq('follower_id', user.id)
         .eq('following_id', targetUserId);
 
+      if (!error) {
+        await supabase.rpc('decrement_follow_counts', {
+          p_follower_id: user.id,
+          p_following_id: targetUserId,
+        });
+      }
       return !error;
     } catch (err: any) {
       console.log('followService.unfollowUser error:', err.message);

@@ -6,53 +6,7 @@ import UserInfoPanel from './UserInfoPanel';
 import { messageService } from '@/lib/services/hnChatService';
 import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
-
-// Fallback static conversations for when DB has no data yet
-const FALLBACK_CONVERSATIONS = [
-  {
-    id: 'conv-001',
-    user: 'Sara Nova',
-    username: 'saranvoa',
-    avatar: 'https://i.pravatar.cc/80?img=47',
-    lastMessage: 'Can you check the new artwork I sent? 🎨',
-    time: '2m',
-    unread: 3,
-    online: true,
-    verified: true,
-    pinned: true,
-    receiverId: null,
-    conversationId: null,
-  },
-  {
-    id: 'conv-002',
-    user: 'James Orbit',
-    username: 'jamesorbit',
-    avatar: 'https://i.pravatar.cc/80?img=12',
-    lastMessage: 'The PR is ready for review 🚀',
-    time: '14m',
-    unread: 1,
-    online: true,
-    verified: false,
-    pinned: false,
-    receiverId: null,
-    conversationId: null,
-  },
-  {
-    id: 'conv-003',
-    user: 'hnChat Team',
-    username: 'team',
-    avatar: '',
-    lastMessage: 'New features are live! Check the changelog.',
-    time: '1h',
-    unread: 0,
-    online: false,
-    verified: true,
-    pinned: true,
-    isGroup: true,
-    receiverId: null,
-    conversationId: null,
-  },
-];
+import Icon from '@/components/ui/AppIcon';
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -66,8 +20,8 @@ function timeAgo(dateStr: string) {
 
 export default function MessagingLayout() {
   const { user } = useAuth();
-  const [conversations, setConversations] = useState<any[]>(FALLBACK_CONVERSATIONS);
-  const [activeConvId, setActiveConvId] = useState('conv-001');
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(true);
   const [loadingConvs, setLoadingConvs] = useState(true);
 
@@ -99,12 +53,15 @@ export default function MessagingLayout() {
           };
         });
         setConversations(mapped);
-        if (mapped.length > 0) {
+        if (!activeConvId && mapped.length > 0) {
           setActiveConvId(mapped[0].id);
         }
+      } else {
+        setConversations([]);
       }
     } catch (err: any) {
       console.log('Load conversations error:', err.message);
+      setConversations([]);
     } finally {
       setLoadingConvs(false);
     }
@@ -133,25 +90,51 @@ export default function MessagingLayout() {
     return () => { supabase.removeChannel(channel); };
   }, [user, loadConversations]);
 
-  const activeConv = conversations?.find((c) => c?.id === activeConvId) || conversations?.[0];
+  const activeConv = conversations.find((c) => c?.id === activeConvId) || conversations[0] || null;
+
+  // Empty state when no conversations
+  if (!loadingConvs && conversations.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center" style={{ height: 'calc(100vh - 57px)' }}>
+        <div className="flex flex-col items-center gap-4 text-center px-6">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
+            style={{ background: 'rgba(0,210,255,0.08)', border: '1px solid rgba(0,210,255,0.15)' }}>
+            <Icon name="ChatBubbleLeftRightIcon" size={28} className="text-cyan-400" />
+          </div>
+          <div>
+            <p className="text-white font-semibold text-lg">No messages yet</p>
+            <p className="text-slate-500 text-sm mt-1">Start a conversation by visiting someone&apos;s profile</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full" style={{ height: 'calc(100vh - 57px)' }}>
       {/* Conversation list */}
       <ConversationList
         conversations={conversations}
-        activeId={activeConvId}
+        activeId={activeConvId || ''}
         onSelect={setActiveConvId}
       />
       {/* Chat window */}
-      <ChatWindow
-        conversation={activeConv}
-        onToggleInfo={() => setShowInfo(!showInfo)}
-        showInfo={showInfo}
-      />
-      {/* Info panel */}
-      {showInfo && (
-        <UserInfoPanel conversation={activeConv} onClose={() => setShowInfo(false)} />
+      {activeConv ? (
+        <>
+          <ChatWindow
+            conversation={activeConv}
+            onToggleInfo={() => setShowInfo(!showInfo)}
+            showInfo={showInfo}
+          />
+          {/* Info panel */}
+          {showInfo && (
+            <UserInfoPanel conversation={activeConv} onClose={() => setShowInfo(false)} />
+          )}
+        </>
+      ) : (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-7 h-7 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+        </div>
       )}
     </div>
   );
