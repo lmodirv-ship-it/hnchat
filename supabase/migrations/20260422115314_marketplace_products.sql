@@ -26,7 +26,8 @@ CREATE INDEX IF NOT EXISTS idx_marketplace_products_created_at ON public.marketp
 CREATE INDEX IF NOT EXISTS idx_marketplace_products_is_active ON public.marketplace_products(is_active);
 
 -- Auto-update updated_at
-CREATE TRIGGER IF NOT EXISTS marketplace_products_updated_at
+DROP TRIGGER IF EXISTS marketplace_products_updated_at ON public.marketplace_products;
+CREATE TRIGGER marketplace_products_updated_at
     BEFORE UPDATE ON public.marketplace_products
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
