@@ -1,13 +1,16 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import FeaturedBanner from './FeaturedBanner';
 import ProductGrid from './ProductGrid';
 import CartSidebar from './CartSidebar';
 import Icon from '@/components/ui/AppIcon';
 import { Toaster } from 'sonner';
+import { cartService } from '@/lib/services/hnChatService';
+import { useAuth } from '@/contexts/AuthContext';
 
 export interface CartItem {
   id: string;
+  cartRowId?: string;
   name: string;
   price: number;
   image: string;
@@ -28,13 +31,26 @@ const categories = [
 ];
 
 export default function MarketplaceScreen() {
+  const { user } = useAuth();
   const [cartOpen, setCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState('cat-all');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('trending');
 
-  const addToCart = (item: Omit<CartItem, 'quantity'>) => {
+  // Load cart from Supabase when user is authenticated
+  const loadCart = useCallback(async () => {
+    if (!user) { setCartItems([]); return; }
+    const items = await cartService.getCart();
+    setCartItems(items as CartItem[]);
+  }, [user]);
+
+  useEffect(() => {
+    loadCart();
+  }, [loadCart]);
+
+  const addToCart = async (item: Omit<CartItem, 'quantity'>) => {
+    // Optimistic update
     setCartItems((prev) => {
       const existing = prev.find((c) => c.id === item.id);
       if (existing) {
@@ -43,15 +59,26 @@ export default function MarketplaceScreen() {
       return [...prev, { ...item, quantity: 1 }];
     });
     setCartOpen(true);
+
+    if (user) {
+      const existing = cartItems.find((c) => c.id === item.id);
+      await cartService.upsertItem(item.id, (existing?.quantity || 0) + 1);
+    }
   };
 
-  const removeFromCart = (id: string) => {
+  const removeFromCart = async (id: string) => {
     setCartItems((prev) => prev.filter((c) => c.id !== id));
+    if (user) {
+      await cartService.removeItem(id);
+    }
   };
 
-  const updateQuantity = (id: string, qty: number) => {
+  const updateQuantity = async (id: string, qty: number) => {
     if (qty <= 0) { removeFromCart(id); return; }
     setCartItems((prev) => prev.map((c) => c.id === id ? { ...c, quantity: qty } : c));
+    if (user) {
+      await cartService.upsertItem(id, qty);
+    }
   };
 
   const totalCount = cartItems.reduce((sum, c) => sum + c.quantity, 0);
@@ -123,7 +150,7 @@ export default function MarketplaceScreen() {
               onClick={() => setActiveCategory(cat.id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-600 transition-all duration-150 flex-shrink-0 ${
                 activeCategory === cat.id
-                  ? 'text-ice-black' :'text-slate-400 hover:text-slate-200 border border-white/08 hover:bg-white/05'
+                  ? 'text-ice-black' : 'text-slate-400 hover:text-slate-200 border border-white/08 hover:bg-white/05'
               }`}
               style={activeCategory === cat.id ? { background: 'linear-gradient(135deg, #6ee7f7, #a78bfa)' } : {}}
             >

@@ -1069,3 +1069,102 @@ export const marketplaceService = {
     }
   },
 };
+
+// ─── CART ─────────────────────────────────────────────────────────────────────
+
+export const cartService = {
+  async getCart() {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('cart_items')
+        .select(`
+          id, quantity, product_id,
+          product:marketplace_products!cart_items_product_id_fkey(
+            id, name, price, image_url, image_alt,
+            seller:user_profiles!marketplace_products_seller_id_fkey(id, username, full_name)
+          )
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        if (isSchemaError(error)) throw error;
+        return [];
+      }
+      return (data || []).map((item: any) => ({
+        id: item.product_id,
+        cartRowId: item.id,
+        name: item.product?.name || '',
+        price: item.product?.price || 0,
+        image: item.product?.image_url || '',
+        imageAlt: item.product?.image_alt || item.product?.name || '',
+        seller: item.product?.seller?.full_name || item.product?.seller?.username || 'Seller',
+        quantity: item.quantity,
+      }));
+    } catch (err: any) {
+      console.log('cartService.getCart error:', err.message);
+      return [];
+    }
+  },
+
+  async upsertItem(productId: string, quantity: number) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    try {
+      if (quantity <= 0) {
+        return await cartService.removeItem(productId);
+      }
+      const { error } = await supabase
+        .from('cart_items')
+        .upsert(
+          { user_id: user.id, product_id: productId, quantity, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id,product_id' }
+        );
+      return !error;
+    } catch (err: any) {
+      console.log('cartService.upsertItem error:', err.message);
+      return false;
+    }
+  },
+
+  async removeItem(productId: string) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    try {
+      const { error } = await supabase
+        .from('cart_items')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('product_id', productId);
+      return !error;
+    } catch (err: any) {
+      console.log('cartService.removeItem error:', err.message);
+      return false;
+    }
+  },
+
+  async clearCart() {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    try {
+      const { error } = await supabase
+        .from('cart_items')
+        .delete()
+        .eq('user_id', user.id);
+      return !error;
+    } catch (err: any) {
+      console.log('cartService.clearCart error:', err.message);
+      return false;
+    }
+  },
+};
