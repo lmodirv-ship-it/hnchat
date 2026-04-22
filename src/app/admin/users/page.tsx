@@ -12,6 +12,7 @@ interface UserProfile {
   is_verified: boolean;
   is_active: boolean;
   is_admin: boolean;
+  is_owner?: boolean;
   followers_count: number;
   posts_count: number;
   created_at: string;
@@ -36,7 +37,7 @@ export default function AdminUsersPage() {
     setLoading(true);
     const { data } = await supabase
       .from('user_profiles')
-      .select('id, email, username, full_name, avatar_url, is_verified, is_active, is_admin, followers_count, posts_count, created_at')
+      .select('id, email, username, full_name, avatar_url, is_verified, is_active, is_admin, is_owner, followers_count, posts_count, created_at')
       .order('created_at', { ascending: false })
       .limit(100);
     if (data) setUsers(data);
@@ -46,6 +47,8 @@ export default function AdminUsersPage() {
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
   const banUser = async (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    if (user?.is_owner) { showToast('Cannot ban the site owner', 'error'); return; }
     setActionLoading(userId);
     const { error } = await supabase.from('user_profiles').update({ is_active: false }).eq('id', userId);
     if (error) { showToast('Failed to ban user', 'error'); }
@@ -62,6 +65,8 @@ export default function AdminUsersPage() {
   };
 
   const deleteUser = async (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    if (user?.is_owner) { showToast('Cannot delete the site owner', 'error'); setConfirmDelete(null); return; }
     setActionLoading(userId);
     setConfirmDelete(null);
     const { error } = await supabase.from('user_profiles').delete().eq('id', userId);
@@ -71,6 +76,8 @@ export default function AdminUsersPage() {
   };
 
   const toggleAdmin = async (userId: string, currentValue: boolean) => {
+    const user = users.find(u => u.id === userId);
+    if (user?.is_owner) { showToast('Cannot change owner role', 'error'); return; }
     setActionLoading(userId);
     const { error } = await supabase.from('user_profiles').update({ is_admin: !currentValue }).eq('id', userId);
     if (error) { showToast('Failed to update role', 'error'); }
@@ -218,6 +225,12 @@ export default function AdminUsersPage() {
                             {u.is_verified && (
                               <Icon name="CheckBadgeIcon" size={14} style={{ color: '#00d2ff' }} />
                             )}
+                            {u.is_owner && (
+                              <span className="text-xs px-1.5 py-0.5 rounded-full font-bold"
+                                style={{ background: 'rgba(0,210,255,0.15)', color: '#00d2ff', border: '1px solid rgba(0,210,255,0.3)', fontSize: 9 }}>
+                                👑 OWNER
+                              </span>
+                            )}
                           </div>
                           <span className="text-xs text-slate-600">@{u.username}</span>
                         </div>
@@ -252,41 +265,50 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center justify-end gap-2">
-                        {u.is_active ? (
-                          <button
-                            onClick={() => banUser(u.id)}
-                            disabled={actionLoading === u.id || u.is_admin}
-                            title={u.is_admin ? "Can't ban admin" : "Ban user"}
-                            className="p-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-30"
-                            style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.2)', color: '#fbbf24' }}>
-                            {actionLoading === u.id ? (
-                              <div className="w-3.5 h-3.5 rounded-full border border-current border-t-transparent animate-spin" />
-                            ) : (
-                              <Icon name="NoSymbolIcon" size={14} />
-                            )}
-                          </button>
+                        {u.is_owner ? (
+                          <span className="text-xs px-2.5 py-1 rounded-full font-medium"
+                            style={{ background: 'rgba(0,210,255,0.1)', color: '#00d2ff', border: '1px solid rgba(0,210,255,0.2)' }}>
+                            🛡️ Protected
+                          </span>
                         ) : (
-                          <button
-                            onClick={() => unbanUser(u.id)}
-                            disabled={actionLoading === u.id}
-                            title="Unban user"
-                            className="p-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-30"
-                            style={{ background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399' }}>
-                            {actionLoading === u.id ? (
-                              <div className="w-3.5 h-3.5 rounded-full border border-current border-t-transparent animate-spin" />
+                          <>
+                            {u.is_active ? (
+                              <button
+                                onClick={() => banUser(u.id)}
+                                disabled={actionLoading === u.id || u.is_admin}
+                                title={u.is_admin ? "Can't ban admin" : "Ban user"}
+                                className="p-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-30"
+                                style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.2)', color: '#fbbf24' }}>
+                                {actionLoading === u.id ? (
+                                  <div className="w-3.5 h-3.5 rounded-full border border-current border-t-transparent animate-spin" />
+                                ) : (
+                                  <Icon name="NoSymbolIcon" size={14} />
+                                )}
+                              </button>
                             ) : (
-                              <Icon name="CheckCircleIcon" size={14} />
+                              <button
+                                onClick={() => unbanUser(u.id)}
+                                disabled={actionLoading === u.id}
+                                title="Unban user"
+                                className="p-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-30"
+                                style={{ background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399' }}>
+                                {actionLoading === u.id ? (
+                                  <div className="w-3.5 h-3.5 rounded-full border border-current border-t-transparent animate-spin" />
+                                ) : (
+                                  <Icon name="CheckCircleIcon" size={14} />
+                                )}
+                              </button>
                             )}
-                          </button>
+                            <button
+                              onClick={() => setConfirmDelete(u.id)}
+                              disabled={actionLoading === u.id || u.is_admin}
+                              title={u.is_admin ? "Can't delete admin" : "Delete user"}
+                              className="p-1.5 rounded-lg transition-all disabled:opacity-30"
+                              style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)', color: '#f87171' }}>
+                              <Icon name="TrashIcon" size={14} />
+                            </button>
+                          </>
                         )}
-                        <button
-                          onClick={() => setConfirmDelete(u.id)}
-                          disabled={actionLoading === u.id || u.is_admin}
-                          title={u.is_admin ? "Can't delete admin" : "Delete user"}
-                          className="p-1.5 rounded-lg transition-all disabled:opacity-30"
-                          style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)', color: '#f87171' }}>
-                          <Icon name="TrashIcon" size={14} />
-                        </button>
                       </div>
                     </td>
                   </tr>
