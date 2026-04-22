@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
@@ -221,35 +221,70 @@ export default function OwnerDashboard() {
 
   // ── Auth check ──
   useEffect(() => {
-    checkOwnerAccess();
-  }, []);
-
-  const checkOwnerAccess = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const hasSessionAccess = session?.user?.email === OWNER_EMAIL;
+    const timeoutId = setTimeout(() => {
+      // Fallback: if auth check takes too long, check localStorage only
       let hasDirectAccess = false;
       try {
         hasDirectAccess = typeof window !== 'undefined' && localStorage.getItem(OWNER_ACCESS_KEY) === 'granted';
       } catch { /* ignore */ }
-
-      if (!hasSessionAccess && !hasDirectAccess) {
+      if (!hasDirectAccess) {
         router.replace('/owner-login');
-        return;
+      } else {
+        setLoading(false);
       }
+    }, 5000);
 
+    const runCheck = async () => {
       try {
-        await fetch('/api/owner-setup', { method: 'POST' });
-      } catch { /* ignore setup errors */ }
+        let hasSessionAccess = false;
+        let hasDirectAccess = false;
 
-      try {
-        await loadStats();
-      } catch { /* ignore stats errors, show dashboard anyway */ }
-    } catch (err) {
-      console.error('Owner access check failed:', err);
-    } finally {
-      setLoading(false);
-    }
+        try {
+          hasDirectAccess = typeof window !== 'undefined' && localStorage.getItem(OWNER_ACCESS_KEY) === 'granted';
+        } catch { /* ignore */ }
+
+        try {
+          const sessionPromise = supabase.auth.getSession();
+          const timeoutPromise = new Promise<null>((_, reject) =>
+            setTimeout(() => reject(new Error('session timeout')), 3000)
+          );
+          const result = await Promise.race([sessionPromise, timeoutPromise]);
+          if (result && typeof result === 'object' && 'data' in result) {
+            hasSessionAccess = result.data?.session?.user?.email === OWNER_EMAIL;
+          }
+        } catch { /* session check failed or timed out */ }
+
+        if (!hasSessionAccess && !hasDirectAccess) {
+          clearTimeout(timeoutId);
+          router.replace('/owner-login');
+          return;
+        }
+
+        try {
+          await Promise.race([
+            fetch('/api/owner-setup', { method: 'POST' }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('setup timeout')), 3000))
+          ]);
+        } catch { /* ignore setup errors */ }
+
+        try {
+          await loadStats();
+        } catch { /* ignore stats errors, show dashboard anyway */ }
+      } catch (err) {
+        console.error('Owner access check failed:', err);
+      } finally {
+        clearTimeout(timeoutId);
+        setLoading(false);
+      }
+    };
+
+    runCheck();
+
+    return () => clearTimeout(timeoutId);
+  }, []);
+
+  const checkOwnerAccess = async () => {
+    // kept for compatibility but logic moved to useEffect above
   };
 
   // ── Owner API helper ──
