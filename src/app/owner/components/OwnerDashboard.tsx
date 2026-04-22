@@ -225,21 +225,31 @@ export default function OwnerDashboard() {
   }, []);
 
   const checkOwnerAccess = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const hasSessionAccess = session?.user?.email === OWNER_EMAIL;
-    let hasDirectAccess = false;
     try {
-      hasDirectAccess = typeof window !== 'undefined' && localStorage.getItem(OWNER_ACCESS_KEY) === 'granted';
-    } catch { /* ignore */ }
+      const { data: { session } } = await supabase.auth.getSession();
+      const hasSessionAccess = session?.user?.email === OWNER_EMAIL;
+      let hasDirectAccess = false;
+      try {
+        hasDirectAccess = typeof window !== 'undefined' && localStorage.getItem(OWNER_ACCESS_KEY) === 'granted';
+      } catch { /* ignore */ }
 
-    if (!hasSessionAccess && !hasDirectAccess) {
-      router.replace('/owner-login');
-      return;
+      if (!hasSessionAccess && !hasDirectAccess) {
+        router.replace('/owner-login');
+        return;
+      }
+
+      try {
+        await fetch('/api/owner-setup', { method: 'POST' });
+      } catch { /* ignore setup errors */ }
+
+      try {
+        await loadStats();
+      } catch { /* ignore stats errors, show dashboard anyway */ }
+    } catch (err) {
+      console.error('Owner access check failed:', err);
+    } finally {
+      setLoading(false);
     }
-
-    await fetch('/api/owner-setup', { method: 'POST' });
-    await loadStats();
-    setLoading(false);
   };
 
   // ── Owner API helper ──
@@ -764,91 +774,93 @@ export default function OwnerDashboard() {
                   {users.map((user) => {
                     const isOwner = user.is_owner;
                     return (
-                      <div key={user.id} className="px-5 py-4 flex items-center gap-4 hover:bg-white/[0.015] transition-all">
-                        {/* Avatar */}
-                        <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold"
-                          style={{ background: isOwner ? 'rgba(251,191,36,0.2)' : 'rgba(255,255,255,0.08)', color: isOwner ? '#fbbf24' : '#94a3b8' }}>
-                          {(user.full_name || user.username || '?')[0].toUpperCase()}
-                        </div>
-
-                        {/* Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-semibold text-white truncate">{user.full_name || user.username || 'Anonymous'}</p>
-                            {isOwner && <span className="text-xs px-1.5 py-0.5 rounded-md font-bold" style={{ background: 'rgba(251,191,36,0.2)', color: '#fbbf24' }}>👑 OWNER</span>}
-                            {user.is_admin && !isOwner && <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(167,139,250,0.2)', color: '#a78bfa' }}>Admin</span>}
-                            {user.is_verified && <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399' }}>✓ Verified</span>}
-                            {!user.is_active && <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(248,113,113,0.15)', color: '#f87171' }}>Banned</span>}
+                      <div key={user.id} className="px-5 py-4 hover:bg-white/[0.015] transition-all">
+                        <div className="flex items-center gap-4 flex-wrap">
+                          {/* Avatar */}
+                          <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold"
+                            style={{ background: isOwner ? 'rgba(251,191,36,0.2)' : 'rgba(255,255,255,0.08)', color: isOwner ? '#fbbf24' : '#94a3b8' }}>
+                            {(user.full_name || user.username || '?')[0].toUpperCase()}
                           </div>
-                          <p className="text-xs mt-0.5 truncate" style={{ color: '#78716c' }}>
-                            @{user.username || 'unknown'} · {user.email || 'no email'} · {user.followers_count} followers · {user.posts_count} posts
-                          </p>
-                        </div>
 
-                        {/* Actions */}
-                        {!isOwner && (
-                          <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
-                            {/* Verify / Unverify */}
-                            <button
-                              disabled={actionLoading !== null}
-                              onClick={() => doAction(
-                                user.is_verified ? 'unverify_user' : 'verify_user',
-                                { userId: user.id },
-                                user.is_verified ? 'User unverified' : 'User verified'
-                              )}
-                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 disabled:opacity-50"
-                              style={{ background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.25)', color: '#34d399' }}
-                              title={user.is_verified ? 'Remove verification' : 'Verify user'}>
-                              {user.is_verified ? '✓ Unverify' : '✓ Verify'}
-                            </button>
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-semibold text-white truncate">{user.full_name || user.username || 'Anonymous'}</p>
+                              {isOwner && <span className="text-xs px-1.5 py-0.5 rounded-md font-bold" style={{ background: 'rgba(251,191,36,0.2)', color: '#fbbf24' }}>👑 OWNER</span>}
+                              {user.is_admin && !isOwner && <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(167,139,250,0.2)', color: '#a78bfa' }}>Admin</span>}
+                              {user.is_verified && <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399' }}>✓ Verified</span>}
+                              {!user.is_active && <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(248,113,113,0.15)', color: '#f87171' }}>Banned</span>}
+                            </div>
+                            <p className="text-xs mt-0.5 truncate" style={{ color: '#78716c' }}>
+                              @{user.username || 'unknown'} · {user.email || 'no email'} · {user.followers_count} followers · {user.posts_count} posts
+                            </p>
+                          </div>
 
-                            {/* Admin toggle */}
-                            <button
-                              disabled={actionLoading !== null}
-                              onClick={() => doAction(
-                                user.is_admin ? 'remove_admin' : 'make_admin',
-                                { userId: user.id },
-                                user.is_admin ? 'Admin removed' : 'Promoted to admin'
-                              )}
-                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 disabled:opacity-50"
-                              style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)', color: '#a78bfa' }}
-                              title={user.is_admin ? 'Remove admin' : 'Make admin'}>
-                              {user.is_admin ? 'Demote' : 'Admin'}
-                            </button>
-
-                            {/* Ban / Unban */}
-                            <button
-                              disabled={actionLoading !== null}
-                              onClick={() => confirmAction(
-                                `Are you sure you want to ${user.is_active ? 'ban' : 'unban'} @${user.username || user.id}?`,
-                                () => doAction(
-                                  user.is_active ? 'ban_user' : 'unban_user',
+                          {/* Actions */}
+                          {!isOwner && (
+                            <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+                              {/* Verify / Unverify */}
+                              <button
+                                disabled={actionLoading !== null}
+                                onClick={() => doAction(
+                                  user.is_verified ? 'unverify_user' : 'verify_user',
                                   { userId: user.id },
-                                  user.is_active ? 'User banned' : 'User unbanned'
-                                )
-                              )}
-                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 disabled:opacity-50"
-                              style={{
-                                background: user.is_active ? 'rgba(251,191,36,0.1)' : 'rgba(52,211,153,0.1)',
-                                border: `1px solid ${user.is_active ? 'rgba(251,191,36,0.25)' : 'rgba(52,211,153,0.25)'}`,
-                                color: user.is_active ? '#fbbf24' : '#34d399',
-                              }}>
-                              {user.is_active ? 'Ban' : 'Unban'}
-                            </button>
+                                  user.is_verified ? 'User unverified' : 'User verified'
+                                )}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 disabled:opacity-50"
+                                style={{ background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.25)', color: '#34d399' }}
+                                title={user.is_verified ? 'Remove verification' : 'Verify user'}>
+                                {user.is_verified ? '✓ Unverify' : '✓ Verify'}
+                              </button>
 
-                            {/* Delete */}
-                            <button
-                              disabled={actionLoading !== null}
-                              onClick={() => confirmAction(
-                                `⚠️ Permanently delete @${user.username || user.id}? This cannot be undone.`,
-                                () => doAction('delete_user', { userId: user.id }, 'User deleted')
-                              )}
-                              className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 disabled:opacity-50"
-                              style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171' }}>
-                              Delete
-                            </button>
-                          </div>
-                        )}
+                              {/* Admin toggle */}
+                              <button
+                                disabled={actionLoading !== null}
+                                onClick={() => doAction(
+                                  user.is_admin ? 'remove_admin' : 'make_admin',
+                                  { userId: user.id },
+                                  user.is_admin ? 'Admin removed' : 'Promoted to admin'
+                                )}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 disabled:opacity-50"
+                                style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)', color: '#a78bfa' }}
+                                title={user.is_admin ? 'Remove admin' : 'Make admin'}>
+                                {user.is_admin ? 'Demote' : 'Admin'}
+                              </button>
+
+                              {/* Ban / Unban */}
+                              <button
+                                disabled={actionLoading !== null}
+                                onClick={() => confirmAction(
+                                  `Are you sure you want to ${user.is_active ? 'ban' : 'unban'} @${user.username || user.id}?`,
+                                  () => doAction(
+                                    user.is_active ? 'ban_user' : 'unban_user',
+                                    { userId: user.id },
+                                    user.is_active ? 'User banned' : 'User unbanned'
+                                  )
+                                )}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 disabled:opacity-50"
+                                style={{
+                                  background: user.is_active ? 'rgba(251,191,36,0.1)' : 'rgba(52,211,153,0.1)',
+                                  border: `1px solid ${user.is_active ? 'rgba(251,191,36,0.25)' : 'rgba(52,211,153,0.25)'}`,
+                                  color: user.is_active ? '#fbbf24' : '#34d399',
+                                }}>
+                                {user.is_active ? 'Ban' : 'Unban'}
+                              </button>
+
+                              {/* Delete */}
+                              <button
+                                disabled={actionLoading !== null}
+                                onClick={() => confirmAction(
+                                  `⚠️ Permanently delete @${user.username || user.id}? This cannot be undone.`,
+                                  () => doAction('delete_user', { userId: user.id }, 'User deleted')
+                                )}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 disabled:opacity-50"
+                                style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171' }}>
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -1260,7 +1272,7 @@ export default function OwnerDashboard() {
                                     onClick={() => setRejectingId(receipt.id)}
                                     disabled={actionLoading !== null}
                                     className="px-3 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105 disabled:opacity-50"
-                                    style={{ background: 'rgba(248,113,113,0.1)', color: '#f87171', border: '1px solid rgba(248,113,113,0.25)' }}>
+                                    style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.25)', color: '#f87171' }}>
                                     ✕ رفض
                                   </button>
                                 </div>
