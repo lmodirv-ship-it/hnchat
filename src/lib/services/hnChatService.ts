@@ -699,3 +699,85 @@ export const notificationService = {
       .eq('is_read', false);
   },
 };
+
+// ─── MARKETPLACE ──────────────────────────────────────────────────────────────
+
+export const marketplaceService = {
+  async getProducts(options: { category?: string; sort?: string; limit?: number } = {}) {
+    const supabase = createClient();
+    try {
+      let query = supabase
+        .from('marketplace_products')
+        .select(`
+          id, name, description, price, original_price, image_url, image_alt,
+          category, badge, rating, reviews_count, sold_count,
+          seller:user_profiles!marketplace_products_seller_id_fkey(id, username, full_name, avatar_url, is_verified)
+        `)
+        .eq('is_active', true);
+
+      if (options.category && options.category !== 'cat-all') {
+        query = query.eq('category', options.category);
+      }
+
+      if (options.sort === 'price-low') query = query.order('price', { ascending: true });
+      else if (options.sort === 'price-high') query = query.order('price', { ascending: false });
+      else if (options.sort === 'rating') query = query.order('rating', { ascending: false });
+      else if (options.sort === 'bestseller') query = query.order('sold_count', { ascending: false });
+      else query = query.order('created_at', { ascending: false });
+
+      if (options.limit) query = query.limit(options.limit);
+
+      const { data, error } = await query;
+      if (error) {
+        if (isSchemaError(error)) throw error;
+        return [];
+      }
+      return data || [];
+    } catch (err: any) {
+      console.log('marketplaceService.getProducts error:', err.message);
+      return [];
+    }
+  },
+
+  async createProduct(product: {
+    name: string;
+    description: string;
+    price: number;
+    originalPrice?: number;
+    imageUrl?: string;
+    imageAlt?: string;
+    category?: string;
+    badge?: string;
+  }) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    try {
+      const { data, error } = await supabase
+        .from('marketplace_products')
+        .insert({
+          seller_id: user.id,
+          name: product.name,
+          description: product.description,
+          price: product.price,
+          original_price: product.originalPrice || null,
+          image_url: product.imageUrl || '',
+          image_alt: product.imageAlt || '',
+          category: product.category || 'cat-digital',
+          badge: product.badge || 'new',
+        })
+        .select()
+        .single();
+
+      if (error) {
+        if (isSchemaError(error)) throw error;
+        return null;
+      }
+      return data;
+    } catch (err: any) {
+      console.log('marketplaceService.createProduct error:', err.message);
+      throw err;
+    }
+  },
+};
