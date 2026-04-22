@@ -122,6 +122,27 @@ export const postService = {
 
       if (!error) {
         await supabase.rpc('increment_post_likes', { post_uuid: postId });
+
+        // Create notification for post owner
+        try {
+          const { data: postData } = await supabase
+            .from('posts')
+            .select('user_id')
+            .eq('id', postId)
+            .single();
+
+          if (postData && postData.user_id !== user.id) {
+            await supabase.from('notifications').insert({
+              user_id: postData.user_id,
+              actor_id: user.id,
+              notification_type: 'like',
+              post_id: postId,
+              message: 'liked your post',
+            });
+          }
+        } catch {
+          // Silent fail for notification
+        }
       }
       return !error;
     } catch (err: any) {
@@ -248,7 +269,7 @@ export const postService = {
     try {
       const { data, error } = await supabase
         .from('comments')
-        .insert({ post_id: postId, user_id: user.id, content })
+        .insert({ post_id: postId, user_id: user.id, content, parent_id: null })
         .select(`*, user_profiles(id, username, full_name, avatar_url, is_verified)`)
         .single();
 
@@ -257,11 +278,30 @@ export const postService = {
         return null;
       }
 
-      // Increment comments count using raw SQL via RPC-style update
-      await supabase
-        .from('posts')
-        .update({ comments_count: (await supabase.from('posts').select('comments_count').eq('id', postId).single()).data?.comments_count + 1 || 1 })
-        .eq('id', postId);
+      // Increment comments count using dedicated RPC
+      await supabase.rpc('increment_post_comments', { post_uuid: postId });
+
+      // Create notification for post owner
+      try {
+        const { data: postData } = await supabase
+          .from('posts')
+          .select('user_id')
+          .eq('id', postId)
+          .single();
+
+        if (postData && postData.user_id !== user.id) {
+          await supabase.from('notifications').insert({
+            user_id: postData.user_id,
+            actor_id: user.id,
+            notification_type: 'comment',
+            post_id: postId,
+            comment_id: data?.id || null,
+            message: 'commented on your post',
+          });
+        }
+      } catch {
+        // Silent fail for notification
+      }
 
       return data;
     } catch (err: any) {
@@ -631,6 +671,19 @@ export const messageService = {
         if (isSchemaError(error)) throw error;
         return null;
       }
+
+      // Create message notification for receiver
+      try {
+        await supabase.from('notifications').insert({
+          user_id: receiverId,
+          actor_id: user.id,
+          notification_type: 'message',
+          message: 'sent you a message',
+        });
+      } catch {
+        // Silent fail for notification
+      }
+
       return data;
     } catch (err: any) {
       console.log('messageService.sendMessage error:', err.message);
@@ -658,10 +711,100 @@ export const messageService = {
   },
 };
 
+// ─── REPORTS ──────────────────────────────────────────────────────────────────
+
+export const reportService = {
+  async createReport(params: {
+    reportedPostId?: string;
+    reportedUserId?: string;
+    reportedVideoId?: string;
+    reason: string;
+    description?: string;
+  }) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    try {
+      const { data, error } = await supabase
+        .from('reports')
+        .insert({
+          reporter_id: user.id,
+          reported_post_id: params.reportedPostId || null,
+          reported_user_id: params.reportedUserId || null,
+          reported_video_id: params.reportedVideoId || null,
+          reason: params.reason,
+          description: params.description || '',
+          status: 'pending',
+        })
+        .select()
+        .single();
+
+      if (error) {
+        if (isSchemaError(error)) throw error;
+        return null;
+      }
+      return data;
+    } catch (err: any) {
+      console.log('reportService.createReport error:', err.message);
+      return null;
+    }
+  },
+
+  async getAdminReports(status?: string) {
+    const supabase = createClient();
+    try {
+      let query = supabase
+        .from('reports')
+        .select(`
+          *,
+          reporter:reporter_id(id, username, full_name, avatar_url),
+          reported_user:reported_user_id(id, username, full_name, avatar_url),
+          reported_post:reported_post_id(id, content, post_type)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (status && status !== 'all') {
+        query = query.eq('status', status);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        if (isSchemaError(error)) throw error;
+        return [];
+      }
+      return data || [];
+    } catch (err: any) {
+      console.log('reportService.getAdminReports error:', err.message);
+      return [];
+    }
+  },
+
+  async updateReportStatus(reportId: string, status: 'reviewed' | 'resolved' | 'dismissed') {
+    const supabase = createClient();
+    try {
+      const { error } = await supabase
+        .from('reports')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', reportId);
+
+      if (error) {
+        if (isSchemaError(error)) throw error;
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      console.log('reportService.updateReportStatus error:', err.message);
+      return false;
+    }
+  },
+};
+
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 
 export const notificationService = {
-  async getNotifications() {
+  async getNotifications(limit = 30) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
@@ -671,19 +814,38 @@ export const notificationService = {
         .from('notifications')
         .select(`
           *,
-          actor:user_profiles!notifications_actor_id_fkey(id, username, full_name, avatar_url)
+          actor:actor_id(id, username, full_name, avatar_url, is_verified)
         `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(limit);
 
       if (error) {
         if (isSchemaError(error)) throw error;
         return [];
       }
       return data || [];
-    } catch {
+    } catch (err: any) {
+      console.log('notificationService.getNotifications error:', err.message);
       return [];
+    }
+  },
+
+  async getUnreadCount() {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return 0;
+
+    try {
+      const { count } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+
+      return count || 0;
+    } catch {
+      return 0;
     }
   },
 
@@ -692,11 +854,137 @@ export const notificationService = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', user.id)
-      .eq('is_read', false);
+    try {
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+    } catch (err: any) {
+      console.log('notificationService.markAllRead error:', err.message);
+    }
+  },
+
+  async markRead(notificationId: string) {
+    const supabase = createClient();
+    try {
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notificationId);
+    } catch (err: any) {
+      console.log('notificationService.markRead error:', err.message);
+    }
+  },
+
+  async createNotification(params: {
+    userId: string;
+    actorId: string;
+    type: 'like' | 'comment' | 'follow' | 'mention' | 'message' | 'system';
+    postId?: string;
+    commentId?: string;
+    message?: string;
+  }) {
+    const supabase = createClient();
+    try {
+      // Don't notify yourself
+      if (params.userId === params.actorId) return;
+
+      await supabase.from('notifications').insert({
+        user_id: params.userId,
+        actor_id: params.actorId,
+        notification_type: params.type,
+        post_id: params.postId || null,
+        comment_id: params.commentId || null,
+        message: params.message || '',
+      });
+    } catch (err: any) {
+      console.log('notificationService.createNotification error:', err.message);
+    }
+  },
+};
+
+// ─── FOLLOW ───────────────────────────────────────────────────────────────────
+
+export const followService = {
+  async followUser(targetUserId: string) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    try {
+      const { error } = await supabase
+        .from('followers')
+        .insert({ follower_id: user.id, following_id: targetUserId });
+
+      if (!error) {
+        // Update counts using dedicated RPC
+        await supabase.rpc('increment_follow_counts', {
+          p_follower_id: user.id,
+          p_following_id: targetUserId,
+        });
+
+        // Create follow notification
+        try {
+          await supabase.from('notifications').insert({
+            user_id: targetUserId,
+            actor_id: user.id,
+            notification_type: 'follow',
+            message: 'started following you',
+          });
+        } catch {
+          // Silent fail for notification
+        }
+      }
+      return !error;
+    } catch (err: any) {
+      console.log('followService.followUser error:', err.message);
+      return false;
+    }
+  },
+
+  async unfollowUser(targetUserId: string) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    try {
+      const { error } = await supabase
+        .from('followers')
+        .delete()
+        .eq('follower_id', user.id)
+        .eq('following_id', targetUserId);
+
+      if (!error) {
+        await supabase.rpc('decrement_follow_counts', {
+          p_follower_id: user.id,
+          p_following_id: targetUserId,
+        });
+      }
+      return !error;
+    } catch (err: any) {
+      console.log('followService.unfollowUser error:', err.message);
+      return false;
+    }
+  },
+
+  async isFollowing(targetUserId: string) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    try {
+      const { data } = await supabase
+        .from('followers')
+        .select('id')
+        .eq('follower_id', user.id)
+        .eq('following_id', targetUserId)
+        .single();
+
+      return !!data;
+    } catch {
+      return false;
+    }
   },
 };
 
@@ -778,6 +1066,105 @@ export const marketplaceService = {
     } catch (err: any) {
       console.log('marketplaceService.createProduct error:', err.message);
       throw err;
+    }
+  },
+};
+
+// ─── CART ─────────────────────────────────────────────────────────────────────
+
+export const cartService = {
+  async getCart() {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from('cart_items')
+        .select(`
+          id, quantity, product_id,
+          product:marketplace_products!cart_items_product_id_fkey(
+            id, name, price, image_url, image_alt,
+            seller:user_profiles!marketplace_products_seller_id_fkey(id, username, full_name)
+          )
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        if (isSchemaError(error)) throw error;
+        return [];
+      }
+      return (data || []).map((item: any) => ({
+        id: item.product_id,
+        cartRowId: item.id,
+        name: item.product?.name || '',
+        price: item.product?.price || 0,
+        image: item.product?.image_url || '',
+        imageAlt: item.product?.image_alt || item.product?.name || '',
+        seller: item.product?.seller?.full_name || item.product?.seller?.username || 'Seller',
+        quantity: item.quantity,
+      }));
+    } catch (err: any) {
+      console.log('cartService.getCart error:', err.message);
+      return [];
+    }
+  },
+
+  async upsertItem(productId: string, quantity: number) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    try {
+      if (quantity <= 0) {
+        return await cartService.removeItem(productId);
+      }
+      const { error } = await supabase
+        .from('cart_items')
+        .upsert(
+          { user_id: user.id, product_id: productId, quantity, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id,product_id' }
+        );
+      return !error;
+    } catch (err: any) {
+      console.log('cartService.upsertItem error:', err.message);
+      return false;
+    }
+  },
+
+  async removeItem(productId: string) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    try {
+      const { error } = await supabase
+        .from('cart_items')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('product_id', productId);
+      return !error;
+    } catch (err: any) {
+      console.log('cartService.removeItem error:', err.message);
+      return false;
+    }
+  },
+
+  async clearCart() {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    try {
+      const { error } = await supabase
+        .from('cart_items')
+        .delete()
+        .eq('user_id', user.id);
+      return !error;
+    } catch (err: any) {
+      console.log('cartService.clearCart error:', err.message);
+      return false;
     }
   },
 };

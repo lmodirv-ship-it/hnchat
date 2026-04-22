@@ -4,10 +4,12 @@ import { toast } from 'sonner';
 import { Toaster } from 'sonner';
 import AppImage from '@/components/ui/AppImage';
 import Icon from '@/components/ui/AppIcon';
-import { postService } from '@/lib/services/hnChatService';
+import { postService, reportService } from '@/lib/services/hnChatService';
 import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
 import { trackFunnelStep } from '@/lib/analytics';
+import { trackContentLike, trackContentComment, trackViralShare, trackPostCreated } from '@/lib/analytics';
+import { useRouter } from 'next/navigation';
 
 function formatNum(n: number) {
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
@@ -92,6 +94,7 @@ const PAGE_SIZE = 10;
 
 export default function PostFeed() {
   const { user } = useAuth();
+  const router = useRouter();
   const [posts, setPosts] = useState<any[]>([]);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [bookmarkedPosts, setBookmarkedPosts] = useState<Set<string>>(new Set());
@@ -104,6 +107,9 @@ export default function PostFeed() {
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [showComments, setShowComments] = useState<Record<string, boolean>>({});
   const [feedError, setFeedError] = useState<string | null>(null);
+  const [reportModal, setReportModal] = useState<{ postId: string } | null>(null);
+  const [reportReason, setReportReason] = useState('');
+  const [reportLoading, setReportLoading] = useState(false);
   const loaderRef = useRef<HTMLDivElement>(null);
 
   const loadFeed = useCallback(async (pageNum = 0, append = false) => {
@@ -177,6 +183,7 @@ export default function PostFeed() {
     setLikedPosts((prev) => { const next = new Set(prev); isLiked ? next.delete(postId) : next.add(postId); return next; });
     setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, likes_count: p.likes_count + (isLiked ? -1 : 1) } : p));
     if (!isLiked) trackFunnelStep('like', { post_id: postId });
+    if (!isLiked) trackContentLike(postId, 'post');
     try {
       if (isLiked) await postService.unlikePost(postId);
       else await postService.likePost(postId);
@@ -204,7 +211,12 @@ export default function PostFeed() {
     setPublishing(true);
     try {
       const created = await postService.createPost(newPost.trim());
-      if (created) { setPosts((prev) => [created, ...prev]); setNewPost(''); toast.success('Post published successfully!'); }
+      if (created) {
+        setPosts((prev) => [created, ...prev]);
+        setNewPost('');
+        trackPostCreated('text');
+        toast.success('Post published successfully!');
+      }
     } catch (err: any) {
       toast.error(err.message || 'Failed to publish post');
     } finally {
@@ -220,9 +232,46 @@ export default function PostFeed() {
       await postService.addComment(postId, content);
       setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
       setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p));
+      trackContentComment(postId, 'post');
       toast.success('Comment added!');
     } catch (err: any) {
       toast.error(err.message || 'Failed to add comment');
+    }
+  };
+
+  const handleShare = async (postId: string) => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/home-feed?post=${postId}`);
+      toast.success('Link copied to clipboard!');
+      trackViralShare('clipboard', postId, 'post');
+      // Increment share count
+      const supabase = createClient();
+      const post = posts.find(p => p.id === postId);
+      if (post) {
+        await supabase.from('posts').update({ shares_count: (post.shares_count || 0) + 1 }).eq('id', postId);
+        setPosts(prev => prev.map(p => p.id === postId ? { ...p, shares_count: (p.shares_count || 0) + 1 } : p));
+      }
+    } catch {
+      toast.error('Failed to copy link');
+    }
+  };
+
+  const submitReport = async () => {
+    if (!reportModal || !reportReason.trim()) return;
+    if (!user) { toast.error('Sign in to report'); return; }
+    setReportLoading(true);
+    try {
+      await reportService.createReport({
+        reportedPostId: reportModal.postId,
+        reason: reportReason,
+      });
+      toast.success('Report submitted. Thank you!');
+      setReportModal(null);
+      setReportReason('');
+    } catch {
+      toast.error('Failed to submit report');
+    } finally {
+      setReportLoading(false);
     }
   };
 
@@ -231,6 +280,52 @@ export default function PostFeed() {
   return (
     <>
       <Toaster position="bottom-right" theme="dark" />
+
+      {/* Report Modal */}
+      {reportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="rounded-2xl p-6 w-80 space-y-4"
+            style={{ background: 'rgba(10,10,18,0.98)', border: '1px solid rgba(248,113,113,0.3)' }}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(248,113,113,0.15)' }}>
+                <Icon name="FlagIcon" size={20} className="text-red-400" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white">Report Post</p>
+                <p className="text-xs text-slate-500">Help us keep hnChat safe</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {['Spam', 'Harassment', 'Hate Speech', 'Misinformation', 'Inappropriate Content', 'Other'].map(reason => (
+                <button key={reason} onClick={() => setReportReason(reason)}
+                  className={`w-full text-left px-3 py-2 rounded-xl text-sm transition-all ${
+                    reportReason === reason ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  style={reportReason === reason
+                    ? { background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)' }
+                    : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  {reason}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setReportModal(null); setReportReason(''); }}
+                className="flex-1 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-white transition-all"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                Cancel
+              </button>
+              <button onClick={submitReport} disabled={!reportReason || reportLoading}
+                className="flex-1 py-2 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-40"
+                style={{ background: 'rgba(248,113,113,0.2)', border: '1px solid rgba(248,113,113,0.3)' }}>
+                {reportLoading ? (
+                  <div className="w-4 h-4 rounded-full border border-current border-t-transparent animate-spin mx-auto" />
+                ) : 'Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create post */}
       <div
@@ -317,7 +412,9 @@ export default function PostFeed() {
             <p className="text-white font-700 text-lg">Your feed is empty</p>
             <p className="text-slate-500 text-sm mt-1">Follow creators or be the first to post something!</p>
           </div>
-          <button className="px-6 py-3 rounded-2xl font-600 text-sm"
+          <button
+            onClick={() => router.push('/search-engine')}
+            className="px-6 py-3 rounded-2xl font-600 text-sm"
             style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', color: '#050508' }}>
             Discover Creators
           </button>
@@ -355,7 +452,10 @@ export default function PostFeed() {
                 </div>
                 <p className="text-xs text-slate-600 mt-0.5">{post.created_at ? timeAgo(post.created_at) : ''}</p>
               </div>
-              <button className="p-1.5 rounded-lg hover:bg-white/05 transition-colors flex-shrink-0">
+              <button
+                onClick={() => setReportModal({ postId: post.id })}
+                className="p-1.5 rounded-lg hover:bg-white/05 transition-colors flex-shrink-0"
+                title="Report post">
                 <Icon name="EllipsisHorizontalIcon" size={16} className="text-slate-500" />
               </button>
             </div>
@@ -390,14 +490,25 @@ export default function PostFeed() {
                 <span>{formatNum(post.comments_count || 0)}</span>
               </button>
               <button
+                onClick={() => handleShare(post.id)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-600 text-slate-500 hover:text-slate-300 transition-all duration-200"
+              >
+                <Icon name="ShareIcon" size={15} />
+                <span>{formatNum(post.shares_count || 0)}</span>
+              </button>
+              <button
                 onClick={() => toggleBookmark(post.id)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-600 transition-all duration-200 active:scale-95 ${isBookmarked ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-600 transition-all duration-200 active:scale-95 ml-auto ${isBookmarked ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
                 style={isBookmarked ? { background: 'rgba(0,210,255,0.08)' } : {}}
               >
                 <Icon name="BookmarkIcon" size={15} />
               </button>
-              <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-600 text-slate-500 hover:text-slate-300 transition-all duration-200 ml-auto">
-                <Icon name="ShareIcon" size={15} />
+              <button
+                onClick={() => setReportModal({ postId: post.id })}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-600 text-slate-500 hover:text-red-400 transition-all duration-200"
+                title="Report post"
+              >
+                <Icon name="FlagIcon" size={15} />
               </button>
             </div>
 

@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { Toaster } from 'sonner';
@@ -12,12 +12,6 @@ import { createClient } from '@/lib/supabase/client';
 
 type LoginForm = { email: string; password: string; remember: boolean };
 type SignupForm = { fullName: string; username: string; email: string; password: string; confirmPassword: string; terms: boolean };
-
-const demoAccounts = [
-  { role: 'Creator', email: 'sara.nova@hnchat.io', password: 'Creator@2026' },
-  { role: 'Shopper', email: 'james.orbit@hnchat.io', password: 'Shop@2026!' },
-  { role: 'Admin', email: 'admin@hnchat.io', password: 'HnAdmin#26' },
-];
 
 const features = [
   { icon: 'ChatBubbleLeftRightIcon', label: 'Messaging & Communities' },
@@ -39,6 +33,7 @@ export default function AuthScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [visitorCount, setVisitorCount] = useState<number | null>(null);
 
   const loginForm = useForm<LoginForm>({ defaultValues: { email: '', password: '', remember: false } });
   const signupForm = useForm<SignupForm>({ defaultValues: { fullName: '', username: '', email: '', password: '', confirmPassword: '', terms: false } });
@@ -50,7 +45,7 @@ export default function AuthScreen() {
       toast.success('Welcome back to hnChat!');
       router.push('/home-feed');
     } catch (err: any) {
-      toast.error(err.message || 'Invalid credentials. Try the demo accounts below.');
+      toast.error(err.message || 'Invalid credentials. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -121,12 +116,19 @@ export default function AuthScreen() {
     }
   };
 
-  const autofillCredentials = (email: string, password: string) => {
-    loginForm.setValue('email', email);
-    loginForm.setValue('password', password);
-    setTab('login');
-    toast.info('Credentials filled — click Sign In');
-  };
+  useEffect(() => {
+    const fetchVisitorCount = async () => {
+      try {
+        const { count } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true });
+        setVisitorCount(count ?? 0);
+      } catch {
+        setVisitorCount(null);
+      }
+    };
+    fetchVisitorCount();
+  }, [supabase]);
 
   return (
     <>
@@ -490,37 +492,32 @@ export default function AuthScreen() {
               </form>
             )}
 
-            {/* Demo credentials */}
+            {/* Visitor counter */}
             <div
-              className="mt-5 rounded-xl p-4 space-y-3"
+              className="mt-5 rounded-xl p-4 flex items-center justify-between gap-4"
               style={{ background: 'rgba(110,231,247,0.04)', border: '1px solid rgba(110,231,247,0.12)' }}
             >
-              <p className="text-xs font-600 text-cyan-glow uppercase tracking-wider">Demo Accounts</p>
-              <div className="space-y-2">
-                {demoAccounts.map((acc) => (
-                  <div
-                    key={`demo-${acc.role}`}
-                    className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-white/05 transition-all duration-150"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="text-xs font-600 px-2 py-0.5 rounded-full flex-shrink-0"
-                        style={{ background: 'rgba(167,139,250,0.15)', color: '#a78bfa' }}
-                      >
-                        {acc.role}
-                      </span>
-                      <span className="text-xs text-slate-400 truncate font-mono">{acc.email}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => autofillCredentials(acc.email, acc.password)}
-                      className="text-xs font-600 px-3 py-1 rounded-lg flex-shrink-0 transition-all duration-150 hover:opacity-80"
-                      style={{ background: 'linear-gradient(135deg, #6ee7f7, #a78bfa)', color: '#0a0a0f' }}
-                    >
-                      Use
-                    </button>
-                  </div>
-                ))}
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{ background: 'rgba(110,231,247,0.1)', border: '1px solid rgba(110,231,247,0.2)' }}
+                >
+                  <Icon name="UsersIcon" size={18} className="text-cyan-glow" />
+                </div>
+                <div>
+                  <p className="text-xs font-600 text-cyan-glow uppercase tracking-wider">Community Members</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Join the growing hnChat family</p>
+                </div>
+              </div>
+              <div className="text-right flex-shrink-0">
+                {visitorCount === null ? (
+                  <div className="w-12 h-5 rounded animate-pulse" style={{ background: 'rgba(110,231,247,0.1)' }} />
+                ) : (
+                  <p className="text-2xl font-800 gradient-text tabular-nums">
+                    {visitorCount.toLocaleString()}
+                  </p>
+                )}
+                <p className="text-xs text-slate-500 mt-0.5">members</p>
               </div>
             </div>
           </div>

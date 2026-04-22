@@ -12,6 +12,7 @@ const adminNav = [
   { label: 'Users', icon: 'UsersIcon', path: '/admin/users' },
   { label: 'Posts', icon: 'DocumentTextIcon', path: '/admin/posts' },
   { label: 'Analytics', icon: 'PresentationChartLineIcon', path: '/admin/analytics' },
+  { label: 'Reports', icon: 'FlagIcon', path: '/admin/reports' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -22,6 +23,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isAdmin, setIsAdmin] = useState(false);
   const [checking, setChecking] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState<{ full_name?: string; username?: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     if (!user) {
@@ -30,7 +33,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
     supabase
       .from('user_profiles')
-      .select('is_admin')
+      .select('is_admin, full_name, username')
       .eq('id', user.id)
       .single()
       .then(({ data }) => {
@@ -38,10 +41,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           router.push('/home-feed');
         } else {
           setIsAdmin(true);
+          setUserProfile({ full_name: data.full_name, username: data.username });
         }
         setChecking(false);
       });
   }, [user]);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && searchQuery.trim()) {
+      router.push(`/admin/users?q=${encodeURIComponent(searchQuery.trim())}`);
+    }
+  };
 
   if (checking) {
     return (
@@ -52,6 +62,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   if (!isAdmin) return null;
+
+  const userInitial = (userProfile?.full_name || userProfile?.username || user?.email || 'A')[0].toUpperCase();
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: '#050508' }}>
@@ -187,19 +199,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <Icon name="MagnifyingGlassIcon" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder="Search users..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
                 className="pl-8 pr-4 py-1.5 rounded-lg text-sm text-slate-300 placeholder-slate-600 outline-none w-40 focus:w-56 transition-all duration-200"
                 style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
               />
             </div>
-            <button className="relative p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-all">
-              <Icon name="BellIcon" size={18} />
-              <span className="absolute top-1 right-1 w-2 h-2 rounded-full"
-                style={{ background: '#f87171', boxShadow: '0 0 6px rgba(248,113,113,0.6)' }} />
-            </button>
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold text-black flex-shrink-0"
-              style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', boxShadow: '0 0 12px rgba(0,210,255,0.3)' }}>
-              A
+            <Link href="/notifications">
+              <button className="relative p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-all" title="Notifications">
+                <Icon name="BellIcon" size={18} />
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full"
+                  style={{ background: '#f87171', boxShadow: '0 0 6px rgba(248,113,113,0.6)' }} />
+              </button>
+            </Link>
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold text-black flex-shrink-0 cursor-default"
+              style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', boxShadow: '0 0 12px rgba(0,210,255,0.3)' }}
+              title={userProfile?.full_name || userProfile?.username || 'Admin'}
+            >
+              {userInitial}
             </div>
           </div>
         </header>

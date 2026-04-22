@@ -1,15 +1,20 @@
 'use client';
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
 import NotificationsPanel from '@/components/NotificationsPanel';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Topbar() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchVal, setSearchVal] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const { signOut } = useAuth();
+  const router = useRouter();
 
   const UNREAD_COUNT = 3;
 
@@ -20,6 +25,23 @@ export default function Topbar() {
     { label: 'Market', icon: 'ShoppingBagIcon', path: '/marketplace' },
     { label: 'Profile', icon: 'UserCircleIcon', path: '/profile' },
   ];
+
+  const handleSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOut();
+      router.push('/sign-up-login');
+    } catch {
+      setSigningOut(false);
+    }
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && searchVal.trim()) {
+      router.push(`/search-engine?q=${encodeURIComponent(searchVal.trim())}`);
+    }
+  };
 
   return (
     <>
@@ -51,6 +73,7 @@ export default function Topbar() {
             onChange={(e) => setSearchVal(e.target.value)}
             onFocus={() => setSearchFocused(true)}
             onBlur={() => setSearchFocused(false)}
+            onKeyDown={handleSearchKeyDown}
             placeholder="Search hnChat — people, posts, videos, products..."
             className="input-glass pl-10 pr-4 py-2.5 text-sm"
             style={{
@@ -90,11 +113,14 @@ export default function Topbar() {
             </button>
             <NotificationsPanel open={notifOpen} onClose={() => setNotifOpen(false)} />
           </div>
+          {/* Messages */}
           <button
+            onClick={() => router.push('/chats-messaging')}
             className="relative p-2.5 rounded-xl transition-all duration-200 hover:bg-white/05 group"
             style={{ border: '1px solid transparent' }}
             onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(0,210,255,0.15)')}
             onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'transparent')}
+            title="Messages"
           >
             <Icon name="ChatBubbleOvalLeftEllipsisIcon" size={19} className="text-slate-400 group-hover:text-slate-200 transition-colors" />
           </button>
@@ -107,9 +133,16 @@ export default function Topbar() {
               Invite
             </button>
           </Link>
-          <Link href="/sign-up-login">
-            <button className="btn-glass text-sm px-4 py-2 ml-1">Sign Out</button>
-          </Link>
+          <button
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="btn-glass text-sm px-4 py-2 ml-1 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {signingOut ? (
+              <div className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+            ) : null}
+            Sign Out
+          </button>
         </div>
       </header>
 
@@ -132,7 +165,11 @@ export default function Topbar() {
           <span className="font-bold text-base gradient-text">hnChat</span>
         </div>
         <div className="flex items-center gap-1">
-          <button className="p-2 rounded-xl hover:bg-white/05">
+          <button
+            className="p-2 rounded-xl hover:bg-white/05"
+            onClick={() => router.push('/search-engine')}
+            title="Search"
+          >
             <Icon name="MagnifyingGlassIcon" size={19} className="text-slate-400" />
           </button>
           <button className="p-2 rounded-xl hover:bg-white/05" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>

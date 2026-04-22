@@ -1,10 +1,11 @@
+import { createServerClient } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 
 // ─── Rate Limit Config ────────────────────────────────────────────────────────
 const CONFIGS = {
-  auth: { limit: 10, windowMs: 60 * 1000 },       // 10 req/min for auth endpoints
-  api: { limit: 60, windowMs: 60 * 1000 },          // 60 req/min for general API
-  email: { limit: 5, windowMs: 60 * 1000 },          // 5 req/min for email endpoints
+  auth: { limit: 10, windowMs: 60 * 1000 },
+  api: { limit: 60, windowMs: 60 * 1000 },
+  email: { limit: 5, windowMs: 60 * 1000 },
 } as const;
 
 type RateLimitKey = keyof typeof CONFIGS;
@@ -37,7 +38,6 @@ function getClientIp(req: NextRequest): string {
  */
 function getRateLimitIdentifier(req: NextRequest): string {
   const ip = getClientIp(req);
-  // Try to get user ID from Supabase session cookie
   const cookieHeader = req.headers.get('cookie') || '';
   const sbCookieMatch = cookieHeader.match(/sb-[^=]+-auth-token=([^;]+)/);
   if (sbCookieMatch) {
@@ -53,7 +53,10 @@ function getRateLimitIdentifier(req: NextRequest): string {
   return `ip:${ip}`;
 }
 
-function getRouteConfig(pathname: string): { key: RateLimitKey; config: typeof CONFIGS[RateLimitKey] } {
+function getRouteConfig(pathname: string): {
+  key: RateLimitKey;
+  config: (typeof CONFIGS)[RateLimitKey];
+} {
   if (
     pathname.startsWith('/api/auth') ||
     pathname.includes('/auth/') ||
@@ -68,10 +71,48 @@ function getRouteConfig(pathname: string): { key: RateLimitKey; config: typeof C
   return { key: 'api', config: CONFIGS.api };
 }
 
-export function middleware(req: NextRequest) {
-  // Only rate-limit API routes
+function getProjectRef(): string {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  return url.match(/https?:\/\/([^.]+)\./)?.[1] ?? '';
+}
+
+function injectTokenFromHeader(request: NextRequest): void {
+  const token = request.headers.get('x-sb-token');
+  if (!token) return;
+  const hasCookie = request.cookies.getAll().some((c) => c.name.includes('auth-token'));
+  if (hasCookie) return;
+  const ref = getProjectRef();
+  if (ref) request.cookies.set(`sb-${ref}-auth-token`, token);
+}
+
+export async function middleware(req: NextRequest) {
+  injectTokenFromHeader(req);
+
+  let supabaseResponse = NextResponse.next({ request: req });
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
+          supabaseResponse = NextResponse.next({ request: req });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
+
+  await supabase.auth.getUser();
+
   if (!req.nextUrl.pathname.startsWith('/api/')) {
-    return NextResponse.next();
+    return supabaseResponse;
   }
 
   maybeCleanup();
@@ -84,11 +125,13 @@ export function middleware(req: NextRequest) {
 
   if (!entry || now > entry.resetAt) {
     rateLimitMap.set(mapKey, { count: 1, resetAt: now + config.windowMs });
-    const res = NextResponse.next();
-    res.headers.set('X-RateLimit-Limit', String(config.limit));
-    res.headers.set('X-RateLimit-Remaining', String(config.limit - 1));
-    res.headers.set('X-RateLimit-Reset', String(Math.ceil((now + config.windowMs) / 1000)));
-    return res;
+    supabaseResponse.headers.set('X-RateLimit-Limit', String(config.limit));
+    supabaseResponse.headers.set('X-RateLimit-Remaining', String(config.limit - 1));
+    supabaseResponse.headers.set(
+      'X-RateLimit-Reset',
+      String(Math.ceil((now + config.windowMs) / 1000))
+    );
+    return supabaseResponse;
   }
 
   entry.count += 1;
@@ -114,13 +157,12 @@ export function middleware(req: NextRequest) {
     );
   }
 
-  const response = NextResponse.next();
-  response.headers.set('X-RateLimit-Limit', String(config.limit));
-  response.headers.set('X-RateLimit-Remaining', String(config.limit - entry.count));
-  response.headers.set('X-RateLimit-Reset', String(Math.ceil(entry.resetAt / 1000)));
-  return response;
+  supabaseResponse.headers.set('X-RateLimit-Limit', String(config.limit));
+  supabaseResponse.headers.set('X-RateLimit-Remaining', String(config.limit - entry.count));
+  supabaseResponse.headers.set('X-RateLimit-Reset', String(Math.ceil(entry.resetAt / 1000)));
+  return supabaseResponse;
 }
 
 export const config = {
-  matcher: '/api/:path*',
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };
