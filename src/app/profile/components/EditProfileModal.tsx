@@ -1,10 +1,12 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { Toaster } from 'sonner';
 import Modal from '@/components/ui/Modal';
 import Icon from '@/components/ui/AppIcon';
+import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
 
 interface EditProfileForm {
   fullName: string;
@@ -12,8 +14,6 @@ interface EditProfileForm {
   bio: string;
   website: string;
   location: string;
-  email: string;
-  phone: string;
   gender: string;
   birthdate: string;
   category: string;
@@ -25,31 +25,73 @@ interface EditProfileModalProps {
 }
 
 export default function EditProfileModal({ open, onClose }: EditProfileModalProps) {
+  const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<'profile' | 'account' | 'privacy'>('profile');
 
-  const { register, handleSubmit, formState: { errors } } = useForm<EditProfileForm>({
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<EditProfileForm>({
     defaultValues: {
-      fullName: 'Alex Mercer',
-      username: 'alexm',
-      bio: 'Digital creator, tech enthusiast & coffee addict ☕ Building the future one pixel at a time.',
-      website: 'hnchat.io/alexm',
-      location: 'San Francisco, CA',
-      email: 'alex@hnchat.io',
-      phone: '+1 (415) 555-0192',
+      fullName: '',
+      username: '',
+      bio: '',
+      website: '',
+      location: '',
       gender: 'prefer-not',
-      birthdate: '1995-07-14',
+      birthdate: '',
       category: 'creator',
     },
   });
 
+  // Load real profile data when modal opens
+  useEffect(() => {
+    if (!open || !user) return;
+    const supabase = createClient();
+    supabase
+      .from('user_profiles')
+      .select('full_name, username, bio, website, location')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          reset({
+            fullName: data.full_name || '',
+            username: data.username || '',
+            bio: data.bio || '',
+            website: data.website || '',
+            location: data.location || '',
+            gender: 'prefer-not',
+            birthdate: '',
+            category: 'creator',
+          });
+        }
+      });
+  }, [open, user, reset]);
+
   const onSubmit = async (data: EditProfileForm) => {
+    if (!user) return;
     setIsLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    // Backend integration point: PATCH /api/users/profile
-    toast.success('Profile updated successfully!');
-    setIsLoading(false);
-    onClose();
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({
+          full_name: data.fullName,
+          username: data.username,
+          bio: data.bio,
+          website: data.website,
+          location: data.location,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+      toast.success('Profile updated successfully!');
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update profile');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const sections = [
@@ -71,7 +113,7 @@ export default function EditProfileModal({ open, onClose }: EditProfileModalProp
                 onClick={() => setActiveSection(s.id)}
                 className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-500 transition-all duration-150 ${
                   activeSection === s.id
-                    ? 'text-cyan-glow bg-cyan-glow/08 border border-cyan-glow/15' :'text-slate-400 hover:bg-white/05 hover:text-slate-200 border border-transparent'
+                    ? 'text-cyan-glow bg-cyan-glow/08 border border-cyan-glow/15' : 'text-slate-400 hover:bg-white/05 hover:text-slate-200 border border-transparent'
                 }`}
               >
                 <Icon name={s.icon as any} size={16} />
@@ -151,15 +193,12 @@ export default function EditProfileModal({ open, onClose }: EditProfileModalProp
                 <div>
                   <label className="block text-xs font-600 text-slate-400 mb-1.5 uppercase tracking-wide">Email Address</label>
                   <input
-                    {...register('email', { required: 'Email is required', pattern: { value: /^\S+@\S+\.\S+$/, message: 'Invalid email' } })}
                     type="email"
-                    className="input-glass text-sm"
+                    value={user?.email || ''}
+                    readOnly
+                    className="input-glass text-sm opacity-60 cursor-not-allowed"
                   />
-                  {errors.email && <p className="text-xs text-red-400 mt-1">{errors.email.message}</p>}
-                </div>
-                <div>
-                  <label className="block text-xs font-600 text-slate-400 mb-1.5 uppercase tracking-wide">Phone Number</label>
-                  <input {...register('phone')} type="tel" className="input-glass text-sm" />
+                  <p className="text-xs text-slate-600 mt-1">Email cannot be changed here. Contact support.</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -197,7 +236,7 @@ export default function EditProfileModal({ open, onClose }: EditProfileModalProp
                 {[
                   { label: 'Private Account', desc: 'Only approved followers can see your posts', id: 'priv-private' },
                   { label: 'Activity Status', desc: 'Show when you were last active', id: 'priv-activity' },
-                  { label: 'Read Receipts', desc: 'Let others see when you\'ve read their messages', id: 'priv-receipts' },
+                  { label: 'Read Receipts', desc: "Let others see when you've read their messages", id: 'priv-receipts' },
                   { label: 'Tagged Posts', desc: 'Allow others to tag you in posts', id: 'priv-tagged' },
                   { label: 'Story Replies', desc: 'Allow replies to your stories', id: 'priv-stories' },
                 ].map((setting) => (

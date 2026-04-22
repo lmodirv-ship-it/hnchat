@@ -1,183 +1,11 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AppImage from '@/components/ui/AppImage';
 import Icon from '@/components/ui/AppIcon';
 import Badge from '@/components/ui/Badge';
 import { toast } from 'sonner';
+import { createClient } from '@/lib/supabase/client';
 import type { CartItem } from './MarketplaceScreen';
-
-const products = [
-  {
-    id: 'prod-001',
-    name: 'Neon Cityscape NFT Pack',
-    seller: 'Sara Nova',
-    sellerAvatar: 'https://i.pravatar.cc/80?img=47',
-    price: 120,
-    originalPrice: null,
-    image: 'https://picsum.photos/seed/prod1/400/400',
-    imageAlt: 'Digital art product showing neon-lit futuristic cityscape with purple and blue tones',
-    rating: 4.9,
-    reviews: 234,
-    sold: 12,
-    category: 'cat-digital',
-    badge: 'new' as const,
-    verified: true,
-    inWishlist: false,
-  },
-  {
-    id: 'prod-002',
-    name: 'Wireless Noise-Cancelling Headphones',
-    seller: 'TechVault Store',
-    sellerAvatar: 'https://i.pravatar.cc/80?img=20',
-    price: 189,
-    originalPrice: 249,
-    image: 'https://picsum.photos/seed/prod2/400/400',
-    imageAlt: 'Product photo of premium wireless headphones in matte black with silver accents',
-    rating: 4.7,
-    reviews: 1892,
-    sold: 4231,
-    category: 'cat-tech',
-    badge: 'sale' as const,
-    verified: true,
-    inWishlist: true,
-  },
-  {
-    id: 'prod-003',
-    name: 'Indie Album — "Signals" Digital Download',
-    seller: 'Zara Moon',
-    sellerAvatar: 'https://i.pravatar.cc/80?img=56',
-    price: 12,
-    originalPrice: null,
-    image: 'https://picsum.photos/seed/prod3/400/400',
-    imageAlt: 'Album cover art for Signals by Zara Moon featuring abstract sound wave visualization',
-    rating: 4.8,
-    reviews: 567,
-    sold: 3102,
-    category: 'cat-music',
-    badge: 'trending' as const,
-    verified: true,
-    inWishlist: false,
-  },
-  {
-    id: 'prod-004',
-    name: 'Mechanical Keyboard — RGB Compact 65%',
-    seller: 'Dex Volta',
-    sellerAvatar: 'https://i.pravatar.cc/80?img=15',
-    price: 145,
-    originalPrice: 180,
-    image: 'https://picsum.photos/seed/prod4/400/400',
-    imageAlt: 'Product photo of compact mechanical keyboard with RGB lighting in dark gaming setup',
-    rating: 4.6,
-    reviews: 3421,
-    sold: 8764,
-    category: 'cat-tech',
-    badge: 'sale' as const,
-    verified: false,
-    inWishlist: false,
-  },
-  {
-    id: 'prod-005',
-    name: 'Abstract Minds Art Bundle',
-    seller: 'Sara Nova',
-    sellerAvatar: 'https://i.pravatar.cc/80?img=47',
-    price: 35,
-    originalPrice: null,
-    image: 'https://picsum.photos/seed/prod5/400/400',
-    imageAlt: 'Digital art bundle product featuring collection of abstract mind visualization artworks',
-    rating: 5.0,
-    reviews: 89,
-    sold: 234,
-    category: 'cat-digital',
-    badge: 'new' as const,
-    verified: true,
-    inWishlist: false,
-  },
-  {
-    id: 'prod-006',
-    name: 'Gourmet Coffee Subscription Box',
-    seller: 'Nora Flux',
-    sellerAvatar: 'https://i.pravatar.cc/80?img=44',
-    price: 44,
-    originalPrice: 55,
-    image: 'https://picsum.photos/seed/prod6/400/400',
-    imageAlt: 'Product photo of artisan coffee subscription box with premium single-origin coffee bags',
-    rating: 4.5,
-    reviews: 712,
-    sold: 2891,
-    category: 'cat-food',
-    badge: 'sale' as const,
-    verified: true,
-    inWishlist: false,
-  },
-  {
-    id: 'prod-007',
-    name: '"The Creator\'s Playbook" eBook',
-    seller: 'Marco Vega',
-    sellerAvatar: 'https://i.pravatar.cc/80?img=8',
-    price: 19,
-    originalPrice: null,
-    image: 'https://picsum.photos/seed/prod7/400/400',
-    imageAlt: 'Digital book cover for The Creator Playbook with minimalist design and bold typography',
-    rating: 4.8,
-    reviews: 2134,
-    sold: 11203,
-    category: 'cat-books',
-    badge: 'trending' as const,
-    verified: false,
-    inWishlist: true,
-  },
-  {
-    id: 'prod-008',
-    name: 'Gaming Controller — Pro Edition',
-    seller: 'Dex Volta',
-    sellerAvatar: 'https://i.pravatar.cc/80?img=15',
-    price: 89,
-    originalPrice: 110,
-    image: 'https://picsum.photos/seed/prod8/400/400',
-    imageAlt: 'Product photo of professional gaming controller in black with textured grip and LED indicators',
-    rating: 4.4,
-    reviews: 891,
-    sold: 5432,
-    category: 'cat-gaming',
-    badge: 'sale' as const,
-    verified: false,
-    inWishlist: false,
-  },
-  {
-    id: 'prod-009',
-    name: 'Vintage Oversized Hoodie — Midnight',
-    seller: 'Lena Kova',
-    sellerAvatar: 'https://i.pravatar.cc/80?img=32',
-    price: 68,
-    originalPrice: null,
-    image: 'https://picsum.photos/seed/prod9/400/400',
-    imageAlt: 'Fashion product photo of oversized dark hoodie on model against minimalist background',
-    rating: 4.6,
-    reviews: 445,
-    sold: 1876,
-    category: 'cat-fashion',
-    badge: 'new' as const,
-    verified: true,
-    inWishlist: false,
-  },
-  {
-    id: 'prod-010',
-    name: 'AI Prompt Engineering Course',
-    seller: 'James Orbit',
-    sellerAvatar: 'https://i.pravatar.cc/80?img=12',
-    price: 99,
-    originalPrice: 149,
-    image: 'https://picsum.photos/seed/prod10/400/400',
-    imageAlt: 'Digital course product cover for AI prompt engineering with futuristic neural network visualization',
-    rating: 4.9,
-    reviews: 3782,
-    sold: 14502,
-    category: 'cat-digital',
-    badge: 'trending' as const,
-    verified: false,
-    inWishlist: false,
-  },
-];
 
 interface ProductGridProps {
   search: string;
@@ -202,8 +30,66 @@ function renderStars(rating: number) {
   );
 }
 
+function ProductSkeleton() {
+  return (
+    <div className="glass-card overflow-hidden animate-pulse">
+      <div className="aspect-square" style={{ background: 'rgba(255,255,255,0.06)' }} />
+      <div className="p-4 space-y-3">
+        <div className="h-3 rounded-lg w-3/4" style={{ background: 'rgba(255,255,255,0.06)' }} />
+        <div className="h-3 rounded-lg w-1/2" style={{ background: 'rgba(255,255,255,0.04)' }} />
+        <div className="flex justify-between">
+          <div className="h-5 rounded-lg w-16" style={{ background: 'rgba(255,255,255,0.06)' }} />
+          <div className="h-8 rounded-xl w-24" style={{ background: 'rgba(255,255,255,0.04)' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProductGrid({ search, category, sort, onAddToCart }: ProductGridProps) {
-  const [wishlist, setWishlist] = useState<Set<string>>(new Set(products.filter((p) => p.inWishlist).map((p) => p.id)));
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [wishlist, setWishlist] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const supabase = createClient();
+    setLoading(true);
+
+    let query = supabase
+      .from('marketplace_products')
+      .select(`
+        id, name, description, price, original_price, image_url, image_alt,
+        category, badge, rating, reviews_count, sold_count,
+        seller:user_profiles!marketplace_products_seller_id_fkey(id, username, full_name, avatar_url, is_verified)
+      `)
+      .eq('is_active', true);
+
+    if (category !== 'cat-all') {
+      query = query.eq('category', category);
+    }
+
+    if (sort === 'newest') {
+      query = query.order('created_at', { ascending: false });
+    } else if (sort === 'price-low') {
+      query = query.order('price', { ascending: true });
+    } else if (sort === 'price-high') {
+      query = query.order('price', { ascending: false });
+    } else if (sort === 'rating') {
+      query = query.order('rating', { ascending: false });
+    } else if (sort === 'bestseller') {
+      query = query.order('sold_count', { ascending: false });
+    } else {
+      // trending: by reviews + sold
+      query = query.order('reviews_count', { ascending: false });
+    }
+
+    query.then(({ data, error }) => {
+      if (!error && data) {
+        setProducts(data);
+      }
+      setLoading(false);
+    });
+  }, [category, sort]);
 
   const toggleWishlist = (id: string, name: string) => {
     setWishlist((prev) => {
@@ -214,16 +100,25 @@ export default function ProductGrid({ search, category, sort, onAddToCart }: Pro
     });
   };
 
-  let filtered = products.filter((p) => {
-    const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.seller.toLowerCase().includes(search.toLowerCase());
-    const matchCat = category === 'cat-all' || p.category === category;
-    return matchSearch && matchCat;
+  const filtered = products.filter((p) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    const sellerName = p.seller?.full_name || p.seller?.username || '';
+    return p.name.toLowerCase().includes(q) || sellerName.toLowerCase().includes(q);
   });
 
-  if (sort === 'price-low') filtered = [...filtered].sort((a, b) => a.price - b.price);
-  if (sort === 'price-high') filtered = [...filtered].sort((a, b) => b.price - a.price);
-  if (sort === 'rating') filtered = [...filtered].sort((a, b) => b.rating - a.rating);
-  if (sort === 'bestseller') filtered = [...filtered].sort((a, b) => b.sold - a.sold);
+  if (loading) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div className="h-4 w-32 rounded-lg animate-pulse" style={{ background: 'rgba(255,255,255,0.06)' }} />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+          {Array.from({ length: 8 }).map((_, i) => <ProductSkeleton key={`pskel-${i}`} />)}
+        </div>
+      </div>
+    );
+  }
 
   if (filtered.length === 0) {
     return (
@@ -248,91 +143,117 @@ export default function ProductGrid({ search, category, sort, onAddToCart }: Pro
         </p>
         <p className="text-xs text-slate-600">Updated just now</p>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-5 gap-4">
-        {filtered.map((product) => (
-          <div key={product.id} className="glass-card-hover overflow-hidden group">
-            {/* Image */}
-            <div className="relative aspect-square overflow-hidden">
-              <AppImage
-                src={product.image}
-                alt={product.imageAlt}
-                fill
-                className="object-cover group-hover:scale-105 transition-transform duration-300"
-                sizes="(max-width: 768px) 50vw, 25vw"
-              />
-              {/* Badges */}
-              <div className="absolute top-2 left-2">
-                <Badge variant={product.badge}>
-                  {product.badge === 'new' ? '✦ New' : product.badge === 'trending' ? '🔥 Trending' : '% Sale'}
-                </Badge>
-              </div>
-              {/* Wishlist */}
-              <button
-                onClick={() => toggleWishlist(product.id, product.name)}
-                className="absolute top-2 right-2 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 opacity-0 group-hover:opacity-100"
-                style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}
-              >
-                <Icon
-                  name="HeartIcon"
-                  size={16}
-                  variant={wishlist.has(product.id) ? 'solid' : 'outline'}
-                  className={wishlist.has(product.id) ? 'text-red-400' : 'text-white'}
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+        {filtered.map((product) => {
+          const sellerName = product.seller?.full_name || product.seller?.username || 'Seller';
+          const sellerAvatar = product.seller?.avatar_url || '';
+          const isWishlisted = wishlist.has(product.id);
+
+          return (
+            <div key={product.id} className="glass-card-hover overflow-hidden group">
+              {/* Image */}
+              <div className="relative aspect-square overflow-hidden">
+                <AppImage
+                  src={product.image_url || 'https://picsum.photos/seed/default/400/400'}
+                  alt={product.image_alt || product.name}
+                  fill
+                  className="object-cover group-hover:scale-105 transition-transform duration-300"
+                  sizes="(max-width: 768px) 50vw, 25vw"
                 />
-              </button>
-              {/* Quick add overlay */}
-              <div className="absolute inset-x-0 bottom-0 p-2 translate-y-full group-hover:translate-y-0 transition-transform duration-200">
+                {/* Badge */}
+                {product.badge && (
+                  <div className="absolute top-2 left-2">
+                    <Badge variant={product.badge === 'sale' ? 'error' : product.badge === 'trending' ? 'warning' : 'success'}>
+                      {product.badge === 'sale' ? '🔥 Sale' : product.badge === 'trending' ? '📈 Trending' : '✨ New'}
+                    </Badge>
+                  </div>
+                )}
+                {/* Wishlist */}
                 <button
-                  onClick={() => {
-                    onAddToCart({ id: product.id, name: product.name, price: product.price, image: product.image, imageAlt: product.imageAlt, seller: product.seller });
-                    toast.success(`${product.name} added to cart!`);
-                  }}
-                  className="w-full py-2 rounded-xl text-sm font-600 text-ice-black flex items-center justify-center gap-2 transition-all duration-150"
-                  style={{ background: 'linear-gradient(135deg, #6ee7f7, #a78bfa)' }}
+                  onClick={() => toggleWishlist(product.id, product.name)}
+                  className="absolute top-2 right-2 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-150 opacity-0 group-hover:opacity-100"
+                  style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}
                 >
-                  <Icon name="ShoppingCartIcon" size={14} />
-                  Quick Add
+                  <Icon
+                    name="HeartIcon"
+                    size={16}
+                    variant={isWishlisted ? 'solid' : 'outline'}
+                    className={isWishlisted ? 'text-red-400' : 'text-white'}
+                  />
                 </button>
               </div>
-            </div>
 
-            {/* Info */}
-            <div className="p-3 space-y-2">
-              {/* Seller */}
-              <div className="flex items-center gap-1.5">
-                <div className="w-5 h-5 rounded-full overflow-hidden flex-shrink-0">
-                  <AppImage
-                    src={product.sellerAvatar}
-                    alt={`${product.seller} marketplace seller avatar`}
-                    width={20}
-                    height={20}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <span className="text-xs text-slate-500 truncate">{product.seller}</span>
-                {product.verified && <Icon name="CheckBadgeIcon" size={12} className="text-cyan-glow flex-shrink-0" />}
-              </div>
-
-              <p className="text-sm font-600 text-slate-200 line-clamp-2 leading-snug">{product.name}</p>
-
-              {/* Rating */}
-              <div className="flex items-center gap-1.5">
-                {renderStars(product.rating)}
-                <span className="text-xs text-slate-500 tabular-nums">({product.reviews.toLocaleString()})</span>
-              </div>
-
-              {/* Price */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-base font-700 gradient-text tabular-nums">${product.price}</span>
-                  {product.originalPrice && (
-                    <span className="text-xs text-slate-500 line-through tabular-nums">${product.originalPrice}</span>
+              {/* Info */}
+              <div className="p-4">
+                {/* Seller */}
+                <div className="flex items-center gap-2 mb-2">
+                  {sellerAvatar ? (
+                    <AppImage
+                      src={sellerAvatar}
+                      alt={`${sellerName} avatar`}
+                      width={20}
+                      height={20}
+                      className="rounded-full object-cover flex-shrink-0"
+                    />
+                  ) : (
+                    <div
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-700 text-ice-black flex-shrink-0"
+                      style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)' }}
+                    >
+                      {sellerName[0]?.toUpperCase()}
+                    </div>
+                  )}
+                  <span className="text-xs text-slate-500 truncate">{sellerName}</span>
+                  {product.seller?.is_verified && (
+                    <Icon name="CheckBadgeIcon" size={12} className="text-cyan-glow flex-shrink-0" />
                   )}
                 </div>
-                <span className="text-xs text-slate-600 tabular-nums">{product.sold.toLocaleString()} sold</span>
+
+                <h3 className="text-sm font-600 text-slate-200 mb-2 line-clamp-2 leading-snug">{product.name}</h3>
+
+                {/* Rating */}
+                {product.rating > 0 && (
+                  <div className="flex items-center gap-1.5 mb-3">
+                    {renderStars(product.rating)}
+                    <span className="text-xs text-slate-500 tabular-nums">
+                      {product.rating.toFixed(1)} ({product.reviews_count?.toLocaleString() || 0})
+                    </span>
+                  </div>
+                )}
+
+                {/* Price + Cart */}
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-base font-700 gradient-text">${product.price}</span>
+                    {product.original_price && (
+                      <span className="text-xs text-slate-600 line-through ml-1.5">${product.original_price}</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => onAddToCart({
+                      id: product.id,
+                      name: product.name,
+                      price: product.price,
+                      image: product.image_url || '',
+                      imageAlt: product.image_alt || product.name,
+                      seller: sellerName,
+                    })}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-600 text-ice-black transition-all duration-150 flex-shrink-0"
+                    style={{ background: 'linear-gradient(135deg, #6ee7f7, #a78bfa)' }}
+                  >
+                    <Icon name="ShoppingCartIcon" size={13} />
+                    Add
+                  </button>
+                </div>
+
+                {product.sold_count > 0 && (
+                  <p className="text-xs text-slate-600 mt-1.5 tabular-nums">{product.sold_count.toLocaleString()} sold</p>
+                )}
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
