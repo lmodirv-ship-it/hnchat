@@ -280,3 +280,129 @@ export function trackFeatureUsed(featureName: string) {
     event_category: 'engagement',
   });
 }
+
+// ─── Marketplace Tracking ─────────────────────────────────────────────────────
+export function trackProductView(productId: string, productName: string, price?: number) {
+  trackEvent('view_item', {
+    item_id: productId,
+    item_name: productName,
+    price,
+    event_category: 'ecommerce',
+  });
+}
+
+export function trackAddToCart(productId: string, productName: string, price?: number) {
+  trackEvent('add_to_cart', {
+    item_id: productId,
+    item_name: productName,
+    price,
+    event_category: 'ecommerce',
+  });
+}
+
+export function trackPurchase(orderId: string, value: number, currency: string = 'USD') {
+  trackEvent('purchase', {
+    transaction_id: orderId,
+    value,
+    currency,
+    event_category: 'ecommerce',
+  });
+}
+
+// ─── Social Tracking ──────────────────────────────────────────────────────────
+export function trackProfileView(profileId: string, isOwnProfile: boolean = false) {
+  trackEvent('profile_view', {
+    profile_id: profileId,
+    is_own_profile: isOwnProfile,
+    event_category: 'social',
+  });
+}
+
+export function trackFollow(targetUserId: string) {
+  trackEvent('follow_user', {
+    target_user_id: targetUserId,
+    event_category: 'social',
+  });
+}
+
+export function trackMessageSent(conversationType: 'direct' | 'group') {
+  trackEvent('message_sent', {
+    conversation_type: conversationType,
+    event_category: 'messaging',
+  });
+}
+
+// ─── Notification Tracking ────────────────────────────────────────────────────
+export function trackNotificationClick(notificationType: string) {
+  trackEvent('notification_click', {
+    notification_type: notificationType,
+    event_category: 'notifications',
+  });
+}
+
+export function trackPushPermission(granted: boolean) {
+  trackEvent('push_permission', {
+    granted,
+    event_category: 'notifications',
+  });
+}
+
+// ─── AI Feature Tracking ──────────────────────────────────────────────────────
+export function trackAIQuery(model: string, queryLength: number) {
+  trackEvent('ai_query', {
+    model,
+    query_length: queryLength,
+    event_category: 'ai',
+  });
+}
+
+// ─── Invite / Referral Tracking ───────────────────────────────────────────────
+export function trackInviteSent(method: 'link' | 'email' | 'social') {
+  trackEvent('invite_sent', {
+    method,
+    event_category: 'referral',
+  });
+}
+
+export function trackInviteAccepted(inviteCode: string) {
+  trackEvent('invite_accepted', {
+    invite_code: inviteCode,
+    event_category: 'referral',
+  });
+}
+
+// ─── Content Creation Tracking ────────────────────────────────────────────────
+export function trackPostCreated(contentType: 'text' | 'image' | 'video') {
+  trackEvent('post_created', {
+    content_type: contentType,
+    event_category: 'creation',
+  });
+}
+
+export function trackLiveStreamStarted(roomId: string) {
+  trackEvent('live_stream_started', {
+    room_id: roomId,
+    event_category: 'live',
+  });
+}
+
+// ─── Page Engagement Hook ─────────────────────────────────────────────────────
+export function usePageEngagement(pageName: string) {
+  const startTimeRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    startTimeRef.current = Date.now();
+    trackEvent('page_engage_start', { page_name: pageName, event_category: 'engagement' });
+
+    return () => {
+      const timeSpent = Math.round((Date.now() - startTimeRef.current) / 1000);
+      if (timeSpent > 2) {
+        trackEvent('page_engage_end', {
+          page_name: pageName,
+          time_spent_seconds: timeSpent,
+          event_category: 'engagement',
+        });
+      }
+    };
+  }, [pageName]);
+}

@@ -1,6 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { trackSearch } from '@/lib/analytics';
 
 interface SearchResult {
   id: number;
@@ -46,7 +47,9 @@ export default function SearchEngineScreen() {
     if (!searchQuery.trim()) return;
     setQuery(searchQuery);
     setSearched(true);
-    setResults([...mockResults.web, ...mockResults.news.slice(0, 2), ...mockResults.people.slice(0, 1)]);
+    const allResults = [...mockResults.web, ...mockResults.news.slice(0, 2), ...mockResults.people.slice(0, 1)];
+    setResults(allResults);
+    trackSearch(searchQuery, allResults.length);
   };
 
   return (

@@ -8,6 +8,7 @@ import { postService, reportService } from '@/lib/services/hnChatService';
 import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
 import { trackFunnelStep } from '@/lib/analytics';
+import { trackContentLike, trackContentComment, trackViralShare, trackPostCreated } from '@/lib/analytics';
 import { useRouter } from 'next/navigation';
 
 function formatNum(n: number) {
@@ -182,6 +183,7 @@ export default function PostFeed() {
     setLikedPosts((prev) => { const next = new Set(prev); isLiked ? next.delete(postId) : next.add(postId); return next; });
     setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, likes_count: p.likes_count + (isLiked ? -1 : 1) } : p));
     if (!isLiked) trackFunnelStep('like', { post_id: postId });
+    if (!isLiked) trackContentLike(postId, 'post');
     try {
       if (isLiked) await postService.unlikePost(postId);
       else await postService.likePost(postId);
@@ -209,7 +211,12 @@ export default function PostFeed() {
     setPublishing(true);
     try {
       const created = await postService.createPost(newPost.trim());
-      if (created) { setPosts((prev) => [created, ...prev]); setNewPost(''); toast.success('Post published successfully!'); }
+      if (created) {
+        setPosts((prev) => [created, ...prev]);
+        setNewPost('');
+        trackPostCreated('text');
+        toast.success('Post published successfully!');
+      }
     } catch (err: any) {
       toast.error(err.message || 'Failed to publish post');
     } finally {
@@ -225,6 +232,7 @@ export default function PostFeed() {
       await postService.addComment(postId, content);
       setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
       setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p));
+      trackContentComment(postId, 'post');
       toast.success('Comment added!');
     } catch (err: any) {
       toast.error(err.message || 'Failed to add comment');
@@ -235,6 +243,7 @@ export default function PostFeed() {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}/home-feed?post=${postId}`);
       toast.success('Link copied to clipboard!');
+      trackViralShare('clipboard', postId, 'post');
       // Increment share count
       const supabase = createClient();
       const post = posts.find(p => p.id === postId);

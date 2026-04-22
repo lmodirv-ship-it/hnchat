@@ -9,7 +9,63 @@ export const EMAIL_TAGS = {
   reengagement: 'reengagement_email',
   weeklyDigest: 'weekly_digest',
   trendingAlert: 'trending_alert',
+  notificationDigest: 'notification_digest',
+  postInteraction: 'post_interaction',
 };
+
+// ─── Contact Management ───────────────────────────────────────────────────────
+
+export async function syncContactToBrevo(
+  email: string,
+  name: string,
+  attributes: Record<string, any> = {}
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${BREVO_BASE_URL}/contacts`, {
+      method: 'POST',
+      headers: {
+        'api-key': BREVO_API_KEY,
+        'Content-Type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({
+        email,
+        attributes: {
+          FIRSTNAME: name?.split(' ')[0] || '',
+          LASTNAME: name?.split(' ').slice(1).join(' ') || '',
+          ...attributes,
+        },
+        listIds: [2], // Default list ID — update to your Brevo list ID
+        updateEnabled: true,
+      }),
+    });
+    return res.ok || res.status === 204;
+  } catch {
+    return false;
+  }
+}
+
+export async function updateContactAttributes(
+  email: string,
+  attributes: Record<string, any>
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${BREVO_BASE_URL}/contacts/${encodeURIComponent(email)}`, {
+      method: 'PUT',
+      headers: {
+        'api-key': BREVO_API_KEY,
+        'Content-Type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({ attributes }),
+    });
+    return res.ok || res.status === 204;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Core Email Sender ────────────────────────────────────────────────────────
 
 async function sendEmail(payload: object): Promise<{ success: boolean; messageId?: string }> {
   try {
@@ -34,6 +90,8 @@ async function sendEmail(payload: object): Promise<{ success: boolean; messageId
 
 export async function sendWelcomeEmail(email: string, name: string): Promise<boolean> {
   const firstName = name?.split(' ')[0] || 'there';
+  // Sync contact to Brevo list on welcome
+  syncContactToBrevo(email, name, { SIGNUP_DATE: new Date().toISOString(), SOURCE: 'web' }).catch(() => {});
   const result = await sendEmail({
     sender: SENDER,
     to: [{ email, name }],
@@ -255,6 +313,116 @@ export async function sendTrendingAlertEmail(
     </div>
     <p style="color:#334155;font-size:12px;text-align:center;margin-top:24px;">
       © 2026 hnChat · <a href="https://hnchat.net/preferences" style="color:#475569;">إلغاء الاشتراك</a>
+    </p>
+  </div>
+</body>
+</html>`,
+  });
+  return result.success;
+}
+
+// ─── Notification Digest Email ────────────────────────────────────────────────
+
+export async function sendNotificationDigestEmail(
+  email: string,
+  name: string,
+  notifications: Array<{ type: string; message: string; time: string }>
+): Promise<boolean> {
+  const firstName = name?.split(' ')[0] || 'there';
+  const notifHtml = notifications.slice(0, 5).map(n => `
+    <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="width:8px;height:8px;border-radius:50%;background:#00d2ff;margin-top:6px;flex-shrink:0;"></div>
+      <div>
+        <p style="color:#e2e8f0;font-size:14px;margin:0 0 2px;">${n.message}</p>
+        <p style="color:#475569;font-size:12px;margin:0;">${n.time}</p>
+      </div>
+    </div>`).join('');
+
+  const result = await sendEmail({
+    sender: SENDER,
+    to: [{ email, name }],
+    subject: `🔔 لديك ${notifications.length} إشعار جديد على hnChat`,
+    tags: [EMAIL_TAGS.notificationDigest],
+    htmlContent: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#050508;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:560px;margin:0 auto;padding:40px 24px;">
+    <div style="text-align:center;margin-bottom:32px;">
+      <div style="display:inline-block;background:linear-gradient(135deg,#00d2ff,#9b59ff);border-radius:16px;padding:12px 20px;">
+        <span style="font-size:22px;font-weight:800;color:#fff;">hnChat</span>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:24px;padding:40px 32px;">
+      <h1 style="color:#e2e8f0;font-size:24px;font-weight:800;margin:0 0 8px;">
+        ${firstName}، لديك إشعارات جديدة 🔔
+      </h1>
+      <p style="color:#94a3b8;font-size:15px;margin:0 0 24px;line-height:1.6;">
+        إليك ملخص آخر تفاعلاتك على hnChat.
+      </p>
+      <div style="background:rgba(0,210,255,0.04);border:1px solid rgba(0,210,255,0.1);border-radius:16px;padding:16px 20px;margin-bottom:24px;">
+        ${notifHtml}
+      </div>
+      <a href="https://hnchat.net/notifications" style="display:block;text-align:center;background:linear-gradient(135deg,#00d2ff,#9b59ff);color:#050508;font-size:16px;font-weight:700;padding:16px 32px;border-radius:14px;text-decoration:none;">
+        👁️ شوف كل الإشعارات
+      </a>
+    </div>
+    <p style="color:#334155;font-size:12px;text-align:center;margin-top:24px;">
+      © 2026 hnChat · <a href="https://hnchat.net/preferences" style="color:#475569;">إدارة الإشعارات</a>
+    </p>
+  </div>
+</body>
+</html>`,
+  });
+  return result.success;
+}
+
+// ─── Post Interaction Email ───────────────────────────────────────────────────
+
+export async function sendPostInteractionEmail(
+  email: string,
+  name: string,
+  interactionType: 'like' | 'comment' | 'share',
+  actorName: string,
+  postPreview: string
+): Promise<boolean> {
+  const firstName = name?.split(' ')[0] || 'there';
+  const emojiMap = { like: '❤️', comment: '💬', share: '🔁' };
+  const labelMap = { like: 'أعجب بمنشورك', comment: 'علق على منشورك', share: 'شارك منشورك' };
+  const emoji = emojiMap[interactionType];
+  const label = labelMap[interactionType];
+
+  const result = await sendEmail({
+    sender: SENDER,
+    to: [{ email, name }],
+    subject: `${emoji} ${actorName} ${label} على hnChat`,
+    tags: [EMAIL_TAGS.postInteraction],
+    htmlContent: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#050508;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:560px;margin:0 auto;padding:40px 24px;">
+    <div style="text-align:center;margin-bottom:32px;">
+      <div style="display:inline-block;background:linear-gradient(135deg,#00d2ff,#9b59ff);border-radius:16px;padding:12px 20px;">
+        <span style="font-size:22px;font-weight:800;color:#fff;">hnChat</span>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:24px;padding:40px 32px;">
+      <div style="font-size:48px;text-align:center;margin-bottom:16px;">${emoji}</div>
+      <h1 style="color:#e2e8f0;font-size:22px;font-weight:800;margin:0 0 8px;text-align:center;">
+        ${actorName} ${label}!
+      </h1>
+      <div style="background:rgba(255,255,255,0.04);border-radius:12px;padding:16px;margin:20px 0;border-left:3px solid #00d2ff;">
+        <p style="color:#94a3b8;font-size:14px;margin:0;line-height:1.6;font-style:italic;">"${postPreview}"</p>
+      </div>
+      <a href="https://hnchat.net/home-feed" style="display:block;text-align:center;background:linear-gradient(135deg,#00d2ff,#9b59ff);color:#050508;font-size:16px;font-weight:700;padding:16px 32px;border-radius:14px;text-decoration:none;">
+        👀 شوف المنشور
+      </a>
+    </div>
+    <p style="color:#334155;font-size:12px;text-align:center;margin-top:24px;">
+      © 2026 hnChat · <a href="https://hnchat.net/preferences" style="color:#475569;">إدارة الإشعارات</a>
     </p>
   </div>
 </body>
