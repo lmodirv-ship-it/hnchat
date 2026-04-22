@@ -110,6 +110,31 @@ export default function OwnerPaymentsScreen() {
     if (tab === 'bank') loadBankDetails();
   }, [tab, receiptFilter]);
 
+  // Real-time subscription for payment_receipts and subscriptions changes
+  useEffect(() => {
+    const channel = supabase
+      .channel('owner-payments-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'payment_receipts' },
+        () => {
+          if (tab === 'receipts') loadReceipts(receiptFilter);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subscriptions' },
+        () => {
+          if (tab === 'receipts') loadReceipts(receiptFilter);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, tab, receiptFilter, loadReceipts]);
+
   const handleReceiptAction = async (receiptId: string, subscriptionId: string, action: 'approve' | 'reject') => {
     setActionLoading(`receipt_${receiptId}`);
     try {

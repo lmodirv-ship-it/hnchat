@@ -76,6 +76,24 @@ export default function OwnerReportsScreen() {
 
   useEffect(() => { loadReports(statusFilter); }, [statusFilter]);
 
+  // Real-time subscription for reports changes
+  useEffect(() => {
+    const channel = supabase
+      .channel('owner-reports-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reports' },
+        () => {
+          loadReports(statusFilter);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, statusFilter, loadReports]);
+
   const doAction = async (action: string, reportId: string) => {
     setActionLoading(`${action}_${reportId}`);
     try {

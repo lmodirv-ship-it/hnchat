@@ -74,6 +74,24 @@ export default function OwnerContentScreen() {
 
   useEffect(() => { loadPosts(0); setPage(0); }, [filter]);
 
+  // Real-time subscription for posts changes
+  useEffect(() => {
+    const channel = supabase
+      .channel('owner-content-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'posts' },
+        () => {
+          loadPosts(page);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, page, filter, loadPosts]);
+
   const doAction = async (action: string, payload: Record<string, string>, successMsg: string) => {
     setActionLoading(`${action}_${Object.values(payload)[0]}`);
     try {

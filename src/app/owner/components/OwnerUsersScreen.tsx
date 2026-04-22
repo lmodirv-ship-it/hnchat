@@ -78,6 +78,24 @@ export default function OwnerUsersScreen() {
 
   useEffect(() => { loadUsers(0, search, filterRole); }, [filterRole]);
 
+  // Real-time subscription for user_profiles changes
+  useEffect(() => {
+    const channel = supabase
+      .channel('owner-users-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_profiles' },
+        () => {
+          loadUsers(page, search, filterRole);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, page, search, filterRole, loadUsers]);
+
   const doAction = async (action: string, payload: Record<string, string>, successMsg: string) => {
     const key = `${action}_${Object.values(payload)[0]}`;
     setActionLoading(key);
