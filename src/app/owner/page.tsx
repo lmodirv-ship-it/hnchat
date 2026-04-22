@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import OwnerDashboard from './components/OwnerDashboard';
 
 export default function OwnerPage() {
