@@ -40,7 +40,7 @@ const regions: Region[] = [
   weather: { temp: 38, condition: 'Sunny', icon: '☀️' },
   news: [
   { id: 'n1', title: 'دبي تطلق مبادرة الذكاء الاصطناعي للمدن الذكية', source: 'Gulf News', time: '2h ago', category: 'Tech', image: "https://images.unsplash.com/photo-1708361089093-beef4c4584e7", imageAlt: 'Dubai skyline at night with smart city lights' },
-  { id: 'n2', title: 'Saudi Vision 2030: New tech hub opens in Riyadh', source: 'Arab News', time: '4h ago', category: 'Business', image: "https://img.rocket.new/generatedImages/rocket_gen_img_1a56fcf18-1776861030791.png", imageAlt: 'Modern business district in Riyadh' },
+  { id: 'n2', title: 'Saudi Vision 2030: New tech hub opens in Riyadh', source: 'Arab News', time: '4h ago', category: 'Business', image: "https://img.rocket.new/generatedImages/rocket_gen_img_137c389ff-1776859195677.png", imageAlt: 'Modern business district in Riyadh' },
   { id: 'n3', title: 'hnChat يتصدر قائمة أفضل التطبيقات في المنطقة', source: 'hnChat News', time: '6h ago', category: 'Apps', image: "https://img.rocket.new/generatedImages/rocket_gen_img_19812e607-1768895508683.png", imageAlt: 'Mobile app interface on smartphone' }],
 
   services: [
