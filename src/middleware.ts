@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // ─── Rate Limit Config ────────────────────────────────────────────────────────
 const CONFIGS = {
-  auth: { limit: 10, windowMs: 60 * 1000 },       // 10 req/min for auth endpoints
-  api: { limit: 60, windowMs: 60 * 1000 },          // 60 req/min for general API
-  email: { limit: 5, windowMs: 60 * 1000 },          // 5 req/min for email endpoints
+  auth: { limit: 10, windowMs: 60 * 1000 },
+  api: { limit: 60, windowMs: 60 * 1000 },
+  email: { limit: 5, windowMs: 60 * 1000 },
 } as const;
 
 type RateLimitKey = keyof typeof CONFIGS;
@@ -38,7 +38,6 @@ function getClientIp(req: NextRequest): string {
  */
 function getRateLimitIdentifier(req: NextRequest): string {
   const ip = getClientIp(req);
-  // Try to get user ID from Supabase session cookie
   const cookieHeader = req.headers.get('cookie') || '';
   const sbCookieMatch = cookieHeader.match(/sb-[^=]+-auth-token=([^;]+)/);
   if (sbCookieMatch) {
@@ -54,7 +53,10 @@ function getRateLimitIdentifier(req: NextRequest): string {
   return `ip:${ip}`;
 }
 
-function getRouteConfig(pathname: string): { key: RateLimitKey; config: typeof CONFIGS[RateLimitKey] } {
+function getRouteConfig(pathname: string): {
+  key: RateLimitKey;
+  config: (typeof CONFIGS)[RateLimitKey];
+} {
   if (
     pathname.startsWith('/api/auth') ||
     pathname.includes('/auth/') ||
@@ -86,7 +88,6 @@ function injectTokenFromHeader(request: NextRequest): void {
 export async function middleware(req: NextRequest) {
   injectTokenFromHeader(req);
 
-  // Build a mutable response that Supabase can attach refreshed cookies to
   let supabaseResponse = NextResponse.next({ request: req });
 
   const supabase = createServerClient(
@@ -108,10 +109,8 @@ export async function middleware(req: NextRequest) {
     }
   );
 
-  // Refresh session — keeps tokens alive without blocking the request
   await supabase.auth.getUser();
 
-  // Rate-limit API routes only
   if (!req.nextUrl.pathname.startsWith('/api/')) {
     return supabaseResponse;
   }
@@ -128,7 +127,10 @@ export async function middleware(req: NextRequest) {
     rateLimitMap.set(mapKey, { count: 1, resetAt: now + config.windowMs });
     supabaseResponse.headers.set('X-RateLimit-Limit', String(config.limit));
     supabaseResponse.headers.set('X-RateLimit-Remaining', String(config.limit - 1));
-    supabaseResponse.headers.set('X-RateLimit-Reset', String(Math.ceil((now + config.windowMs) / 1000)));
+    supabaseResponse.headers.set(
+      'X-RateLimit-Reset',
+      String(Math.ceil((now + config.windowMs) / 1000))
+    );
     return supabaseResponse;
   }
 

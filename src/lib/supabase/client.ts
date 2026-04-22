@@ -16,42 +16,54 @@ const canUseCookies = (() => {
 })();
 
 const fromCookies = () =>
-  typeof document === 'undefined' ? [] :
-  document.cookie.split(';').filter(Boolean).map((c) => {
-    const eqIndex = c.trim().indexOf('=');
-    const name = eqIndex >= 0 ? c.trim().slice(0, eqIndex) : c.trim();
-    const value = eqIndex >= 0 ? decodeURIComponent(c.trim().slice(eqIndex + 1)) : '';
-    return { name: name.trim(), value };
-  }).filter((c) => c.name);
+  typeof document === 'undefined'
+    ? []
+    : document.cookie
+        .split(';')
+        .filter(Boolean)
+        .map((c) => {
+          const eqIndex = c.trim().indexOf('=');
+          const name = eqIndex >= 0 ? c.trim().slice(0, eqIndex) : c.trim();
+          const value =
+            eqIndex >= 0 ? decodeURIComponent(c.trim().slice(eqIndex + 1)) : '';
+          return { name: name.trim(), value };
+        })
+        .filter((c) => c.name);
 
 const fromStorage = () => {
   try {
     return Object.keys(localStorage)
       .filter((k) => k.startsWith(PFX))
       .map((k) => ({ name: k.slice(PFX.length), value: localStorage.getItem(k) || '' }));
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 };
 
-const setCookie = (name: string, value: string, options?: any) => {
+const setCookie = (name: string, value: string, options?: Record<string, unknown>) => {
   let s = `${name}=${encodeURIComponent(value)}; Path=${options?.path || '/'}; SameSite=None; Secure; Partitioned`;
   if (options?.maxAge) s += `; Max-Age=${options.maxAge}`;
   if (options?.domain) s += `; Domain=${options.domain}`;
-  if (options?.expires) s += `; Expires=${new Date(options.expires).toUTCString()}`;
+  if (options?.expires) s += `; Expires=${new Date(options.expires as string).toUTCString()}`;
   document.cookie = s;
 };
 
 const getToken = () =>
-  (canUseCookies() ? fromCookies() : fromStorage())
-    .find((c) => c.name.includes('auth-token'))?.value ?? null;
+  (canUseCookies() ? fromCookies() : fromStorage()).find((c) =>
+    c.name.includes('auth-token')
+  )?.value ?? null;
 
-if (typeof window !== 'undefined' && !(window as any).__sb_patched__) {
-  (window as any).__sb_patched__ = true;
+if (typeof window !== 'undefined' && !(window as Record<string, unknown>).__sb_patched__) {
+  (window as Record<string, unknown>).__sb_patched__ = true;
   const orig = window.fetch.bind(window);
   window.fetch = (input, init) => {
     const token = getToken();
-    const url = typeof input === 'string' ? input
-      : input instanceof URL ? input.href
-      : (input as Request).url;
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
     if (token && (url.startsWith('/') || url.startsWith(window.location.origin))) {
       init = { ...(init || {}), headers: { ...(init?.headers || {}), 'x-sb-token': token } };
     }
@@ -65,21 +77,25 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll: () => canUseCookies() ? fromCookies() : fromStorage(),
+        getAll: () => (canUseCookies() ? fromCookies() : fromStorage()),
         setAll(cookiesToSet) {
           if (typeof document === 'undefined') return;
           if (canUseCookies()) {
             cookiesToSet.forEach(({ name, value, options }) =>
-              value ? setCookie(name, value, options)
-                    : (document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=None; Secure`)
+              value
+                ? setCookie(name, value, options as Record<string, unknown>)
+                : (document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=None; Secure`)
             );
           } else {
             cookiesToSet.forEach(({ name, value, options }) => {
               try {
-                value ? localStorage.setItem(`${PFX}${name}`, value)
-                      : localStorage.removeItem(`${PFX}${name}`);
-              } catch {}
-              if (value) setCookie(name, value, options);
+                value
+                  ? localStorage.setItem(`${PFX}${name}`, value)
+                  : localStorage.removeItem(`${PFX}${name}`);
+              } catch {
+                // storage unavailable
+              }
+              if (value) setCookie(name, value, options as Record<string, unknown>);
             });
           }
         },

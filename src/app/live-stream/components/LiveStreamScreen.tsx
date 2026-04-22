@@ -31,7 +31,7 @@ const liveRooms: LiveRoom[] = [
 { id: 'lr3', host: 'CryptoKing', avatar: 'CK', title: '💎 Diamond Hands — Crypto Analysis Live', category: 'Finance', viewers: 23100, isLive: true, isGroup: false, thumbnail: "https://images.unsplash.com/photo-1651044129930-e2aa0be74df2", tags: ['Crypto', 'Trading', 'Live'], duration: '2:10:05' },
 { id: 'lr4', host: 'ArtCollective', avatar: 'AC', title: '🎨 Digital Art Creation — Watch & Learn', category: 'Art', viewers: 4560, isLive: true, isGroup: true, groupName: 'Digital Artists', thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_11502d10b-1767436448705.png", tags: ['Art', 'Design', 'Tutorial'], duration: '0:32:18' },
 { id: 'lr5', host: 'FitnessPro', avatar: 'FP', title: '💪 Morning Workout — Join Live!', category: 'Fitness', viewers: 6780, isLive: true, isGroup: false, thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_104410f72-1773058542566.png", tags: ['Fitness', 'Health', 'Workout'], duration: '0:58:44' },
-{ id: 'lr6', host: 'GamersUnite', avatar: 'GU', title: '🎮 Tournament Finals — Watch Party', category: 'Gaming', viewers: 45200, isLive: true, isGroup: true, groupName: 'Pro Gamers', thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_13b568c04-1770510210068.png", tags: ['Gaming', 'Tournament', 'Esports'], duration: '3:02:11' }];
+{ id: 'lr6', host: 'GamersUnite', avatar: 'GU', title: '🎮 Tournament Finals — Watch Party', category: 'Gaming', viewers: 45200, isLive: true, isGroup: true, groupName: 'Pro Gamers', thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_15452ffe6-1772150464748.png", tags: ['Gaming', 'Tournament', 'Esports'], duration: '3:02:11' }];
 
 
 const initialChats: ChatMsg[] = [
