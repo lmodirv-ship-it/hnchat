@@ -2,42 +2,56 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import AppLogo from '@/components/ui/AppLogo';
+import { createClient } from '@/lib/supabase/client';
 
 const OWNER_EMAIL = 'lmodirv@gmail.com';
-const OWNER_ACCESS_KEY = 'owner_access_v2';
 
 export default function OwnerLoginClient() {
   const router = useRouter();
+  const supabase = createClient();
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'checking' | 'idle' | 'error'>('checking');
+  const [password, setPassword] = useState('');
+  const [status, setStatus] = useState<'checking' | 'idle' | 'loading' | 'error'>('checking');
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(OWNER_ACCESS_KEY);
-      if (stored === 'granted') {
-        router.replace('/owner');
-        return;
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.email === OWNER_EMAIL) {
+          router.replace('/owner');
+          return;
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // localStorage not available
-    }
-    setStatus('idle');
+      setStatus('idle');
+    };
+    checkSession();
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const emailMatch = email.trim().toLowerCase() === OWNER_EMAIL.toLowerCase();
-
-    if (emailMatch) {
-      try {
-        localStorage.setItem(OWNER_ACCESS_KEY, 'granted');
-      } catch {
-        // localStorage not available, proceed anyway
+    if (email.trim().toLowerCase() !== OWNER_EMAIL.toLowerCase()) {
+      setErrorMsg('Access denied. Invalid credentials.');
+      setStatus('error');
+      return;
+    }
+    setStatus('loading');
+    setErrorMsg('');
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) {
+        setErrorMsg(error.message || 'Authentication failed.');
+        setStatus('error');
+        return;
       }
       router.replace('/owner');
-    } else {
-      setErrorMsg('Access denied. Invalid email.');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Authentication failed.');
       setStatus('error');
     }
   };
@@ -96,15 +110,36 @@ export default function OwnerLoginClient() {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setStatus('idle'); setErrorMsg(''); }}
+                  placeholder="Enter password"
+                  required
+                  autoComplete="current-password"
+                  className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                  }}
+                />
+              </div>
+
               {status === 'error' && (
                 <p className="text-xs text-red-400 text-center">{errorMsg}</p>
               )}
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-95"
+                disabled={status === 'loading'}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
                 style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', boxShadow: '0 0 20px rgba(0,210,255,0.3)' }}>
-                Enter Dashboard
+                {status === 'loading' && (
+                  <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                )}
+                {status === 'loading' ? 'Authenticating...' : 'Enter Dashboard'}
               </button>
             </form>
           )}

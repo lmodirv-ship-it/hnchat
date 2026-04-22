@@ -7,7 +7,6 @@ import Icon from '@/components/ui/AppIcon';
 import AppLogo from '@/components/ui/AppLogo';
 
 const OWNER_EMAIL = 'lmodirv@gmail.com';
-const OWNER_ACCESS_KEY = 'owner_access_v2';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface SiteStats {
@@ -222,39 +221,21 @@ export default function OwnerDashboard() {
   // ── Auth check ──
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      // Fallback: if auth check takes too long, check localStorage only
-      let hasDirectAccess = false;
-      try {
-        hasDirectAccess = typeof window !== 'undefined' && localStorage.getItem(OWNER_ACCESS_KEY) === 'granted';
-      } catch { /* ignore */ }
-      if (!hasDirectAccess) {
-        router.replace('/owner-login');
-      } else {
-        setLoading(false);
-      }
-    }, 5000);
+      // Global fallback: if auth check hangs beyond 6s, redirect to login
+      router.replace('/owner-login');
+    }, 6000);
 
     const runCheck = async () => {
       try {
-        let hasSessionAccess = false;
-        let hasDirectAccess = false;
+        // Use getUser() for a real server-validated session check
+        const userPromise = supabase.auth.getUser();
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error('auth timeout')), 4000)
+        );
 
-        try {
-          hasDirectAccess = typeof window !== 'undefined' && localStorage.getItem(OWNER_ACCESS_KEY) === 'granted';
-        } catch { /* ignore */ }
+        const result = await Promise.race([userPromise, timeoutPromise]);
 
-        try {
-          const sessionPromise = supabase.auth.getSession();
-          const timeoutPromise = new Promise<null>((_, reject) =>
-            setTimeout(() => reject(new Error('session timeout')), 3000)
-          );
-          const result = await Promise.race([sessionPromise, timeoutPromise]);
-          if (result && typeof result === 'object' && 'data' in result) {
-            hasSessionAccess = result.data?.session?.user?.email === OWNER_EMAIL;
-          }
-        } catch { /* session check failed or timed out */ }
-
-        if (!hasSessionAccess && !hasDirectAccess) {
+        if (!result || !('data' in result) || result.data?.user?.email !== OWNER_EMAIL) {
           clearTimeout(timeoutId);
           router.replace('/owner-login');
           return;
@@ -272,6 +253,7 @@ export default function OwnerDashboard() {
         } catch { /* ignore stats errors, show dashboard anyway */ }
       } catch (err) {
         console.error('Owner access check failed:', err);
+        router.replace('/owner-login');
       } finally {
         clearTimeout(timeoutId);
         setLoading(false);
@@ -542,7 +524,7 @@ export default function OwnerDashboard() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    try { localStorage.removeItem(OWNER_ACCESS_KEY); } catch { /* ignore */ }
+    try { localStorage.removeItem('owner_access'); } catch { /* ignore */ }
     router.push('/sign-up-login');
   };
 
@@ -781,7 +763,7 @@ export default function OwnerDashboard() {
                   onKeyDown={(e) => { if (e.key === 'Enter') { setUserPage(0); loadUsers(0, userSearch); } }}
                   placeholder="Search by name, username, email..."
                   className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1 focus:ring-amber-500 transition-all"
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
                 />
               </div>
               <button onClick={() => { setUserPage(0); loadUsers(0, userSearch); }}
