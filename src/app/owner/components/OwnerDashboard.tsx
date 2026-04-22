@@ -7,6 +7,7 @@ import Icon from '@/components/ui/AppIcon';
 import AppLogo from '@/components/ui/AppLogo';
 
 const OWNER_EMAIL = 'lmodirv@gmail.com';
+const OWNER_ACCESS_KEY = 'owner_access_v2';
 
 interface SiteStats {
   total_users: number;
@@ -118,17 +119,17 @@ export default function OwnerDashboard() {
   const checkOwnerAccess = async () => {
     const { data: { session } } = await supabase.auth.getSession();
 
-    // Allow access if authenticated as owner OR if owner_access flag is set in sessionStorage
+    // Allow access if authenticated as owner OR if owner_access flag is set in localStorage
     const hasSessionAccess = session?.user?.email === OWNER_EMAIL;
-    const hasDirectAccess = typeof window !== 'undefined' && sessionStorage.getItem('owner_access') === 'granted';
-
-    if (!session?.user && !hasDirectAccess) {
-      router.replace('/owner-login');
-      return;
+    let hasDirectAccess = false;
+    try {
+      hasDirectAccess = typeof window !== 'undefined' && localStorage.getItem(OWNER_ACCESS_KEY) === 'granted';
+    } catch {
+      hasDirectAccess = false;
     }
 
-    if (session?.user && !hasSessionAccess) {
-      router.replace('/home-feed');
+    if (!hasSessionAccess && !hasDirectAccess) {
+      router.replace('/owner-login');
       return;
     }
 
@@ -170,6 +171,7 @@ export default function OwnerDashboard() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+    try { localStorage.removeItem(OWNER_ACCESS_KEY); } catch { /* ignore */ }
     router.push('/sign-up-login');
   };
 

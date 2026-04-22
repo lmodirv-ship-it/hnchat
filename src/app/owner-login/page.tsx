@@ -1,35 +1,47 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import AppLogo from '@/components/ui/AppLogo';
 
 const OWNER_EMAIL = 'lmodirv@gmail.com';
+const OWNER_PASSWORD = 'hnChat@Owner2026';
+const OWNER_ACCESS_KEY = 'owner_access_v2';
 
 export default function OwnerLoginPage() {
   const router = useRouter();
-  const supabase = createClient();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [status, setStatus] = useState<'checking' | 'idle' | 'error'>('checking');
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.email === OWNER_EMAIL) {
+    // Check if already has owner access stored
+    try {
+      const stored = localStorage.getItem(OWNER_ACCESS_KEY);
+      if (stored === 'granted') {
         router.replace('/owner');
-      } else {
-        setStatus('idle');
+        return;
       }
-    });
+    } catch {
+      // localStorage not available
+    }
+    setStatus('idle');
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (email.trim().toLowerCase() === OWNER_EMAIL.toLowerCase()) {
-      sessionStorage.setItem('owner_access', 'granted');
+    const emailMatch = email.trim().toLowerCase() === OWNER_EMAIL.toLowerCase();
+    const passwordMatch = password === OWNER_PASSWORD;
+
+    if (emailMatch && passwordMatch) {
+      try {
+        localStorage.setItem(OWNER_ACCESS_KEY, 'granted');
+      } catch {
+        // localStorage not available, proceed anyway
+      }
       router.replace('/owner');
     } else {
-      setErrorMsg('Access denied. This email is not authorized.');
+      setErrorMsg('Access denied. Invalid credentials.');
       setStatus('error');
     }
   };
@@ -77,8 +89,26 @@ export default function OwnerLoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); setStatus('idle'); setErrorMsg(''); }}
-                  placeholder="Enter your email"
+                  placeholder="Enter owner email"
                   required
+                  autoComplete="username"
+                  className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setStatus('idle'); setErrorMsg(''); }}
+                  placeholder="Enter owner password"
+                  required
+                  autoComplete="current-password"
                   className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
                   style={{
                     background: 'rgba(255,255,255,0.05)',
