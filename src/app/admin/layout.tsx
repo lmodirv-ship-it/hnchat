@@ -11,6 +11,7 @@ const adminNav = [
   { label: 'Dashboard', icon: 'ChartBarSquareIcon', path: '/admin' },
   { label: 'Users', icon: 'UsersIcon', path: '/admin/users' },
   { label: 'Posts', icon: 'DocumentTextIcon', path: '/admin/posts' },
+  { label: 'Reports', icon: 'FlagIcon', path: '/admin/reports' },
   { label: 'Analytics', icon: 'PresentationChartLineIcon', path: '/admin/analytics' },
 ];
 

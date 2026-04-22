@@ -658,10 +658,100 @@ export const messageService = {
   },
 };
 
+// ─── REPORTS ──────────────────────────────────────────────────────────────────
+
+export const reportService = {
+  async createReport(params: {
+    reportedPostId?: string;
+    reportedUserId?: string;
+    reportedVideoId?: string;
+    reason: string;
+    description?: string;
+  }) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    try {
+      const { data, error } = await supabase
+        .from('reports')
+        .insert({
+          reporter_id: user.id,
+          reported_post_id: params.reportedPostId || null,
+          reported_user_id: params.reportedUserId || null,
+          reported_video_id: params.reportedVideoId || null,
+          reason: params.reason,
+          description: params.description || '',
+          status: 'pending',
+        })
+        .select()
+        .single();
+
+      if (error) {
+        if (isSchemaError(error)) throw error;
+        return null;
+      }
+      return data;
+    } catch (err: any) {
+      console.log('reportService.createReport error:', err.message);
+      return null;
+    }
+  },
+
+  async getAdminReports(status?: string) {
+    const supabase = createClient();
+    try {
+      let query = supabase
+        .from('reports')
+        .select(`
+          *,
+          reporter:reporter_id(id, username, full_name, avatar_url),
+          reported_user:reported_user_id(id, username, full_name, avatar_url),
+          reported_post:reported_post_id(id, content, post_type)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (status && status !== 'all') {
+        query = query.eq('status', status);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        if (isSchemaError(error)) throw error;
+        return [];
+      }
+      return data || [];
+    } catch (err: any) {
+      console.log('reportService.getAdminReports error:', err.message);
+      return [];
+    }
+  },
+
+  async updateReportStatus(reportId: string, status: 'reviewed' | 'resolved' | 'dismissed') {
+    const supabase = createClient();
+    try {
+      const { error } = await supabase
+        .from('reports')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', reportId);
+
+      if (error) {
+        if (isSchemaError(error)) throw error;
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      console.log('reportService.updateReportStatus error:', err.message);
+      return false;
+    }
+  },
+};
+
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
 
 export const notificationService = {
-  async getNotifications() {
+  async getNotifications(limit = 30) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
@@ -671,19 +761,38 @@ export const notificationService = {
         .from('notifications')
         .select(`
           *,
-          actor:user_profiles!notifications_actor_id_fkey(id, username, full_name, avatar_url)
+          actor:actor_id(id, username, full_name, avatar_url, is_verified)
         `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(limit);
 
       if (error) {
         if (isSchemaError(error)) throw error;
         return [];
       }
       return data || [];
-    } catch {
+    } catch (err: any) {
+      console.log('notificationService.getNotifications error:', err.message);
       return [];
+    }
+  },
+
+  async getUnreadCount() {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return 0;
+
+    try {
+      const { count } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+
+      return count || 0;
+    } catch {
+      return 0;
     }
   },
 
@@ -692,11 +801,116 @@ export const notificationService = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('user_id', user.id)
-      .eq('is_read', false);
+    try {
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+    } catch (err: any) {
+      console.log('notificationService.markAllRead error:', err.message);
+    }
+  },
+
+  async markRead(notificationId: string) {
+    const supabase = createClient();
+    try {
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notificationId);
+    } catch (err: any) {
+      console.log('notificationService.markRead error:', err.message);
+    }
+  },
+
+  async createNotification(params: {
+    userId: string;
+    actorId: string;
+    type: 'like' | 'comment' | 'follow' | 'mention' | 'message' | 'system';
+    postId?: string;
+    commentId?: string;
+    message?: string;
+  }) {
+    const supabase = createClient();
+    try {
+      await supabase.rpc('create_notification', {
+        p_user_id: params.userId,
+        p_actor_id: params.actorId,
+        p_type: params.type,
+        p_post_id: params.postId || null,
+        p_comment_id: params.commentId || null,
+        p_message: params.message || '',
+      });
+    } catch (err: any) {
+      console.log('notificationService.createNotification error:', err.message);
+    }
+  },
+};
+
+// ─── FOLLOW ───────────────────────────────────────────────────────────────────
+
+export const followService = {
+  async followUser(targetUserId: string) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    try {
+      const { error } = await supabase
+        .from('followers')
+        .insert({ follower_id: user.id, following_id: targetUserId });
+
+      if (!error) {
+        // Update counts
+        await Promise.all([
+          supabase.from('user_profiles').update({ following_count: supabase.rpc('increment' as any) }).eq('id', user.id),
+          supabase.from('user_profiles').update({ followers_count: supabase.rpc('increment' as any) }).eq('id', targetUserId),
+        ]);
+      }
+      return !error;
+    } catch (err: any) {
+      console.log('followService.followUser error:', err.message);
+      return false;
+    }
+  },
+
+  async unfollowUser(targetUserId: string) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    try {
+      const { error } = await supabase
+        .from('followers')
+        .delete()
+        .eq('follower_id', user.id)
+        .eq('following_id', targetUserId);
+
+      return !error;
+    } catch (err: any) {
+      console.log('followService.unfollowUser error:', err.message);
+      return false;
+    }
+  },
+
+  async isFollowing(targetUserId: string) {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    try {
+      const { data } = await supabase
+        .from('followers')
+        .select('id')
+        .eq('follower_id', user.id)
+        .eq('following_id', targetUserId)
+        .single();
+
+      return !!data;
+    } catch {
+      return false;
+    }
   },
 };
 

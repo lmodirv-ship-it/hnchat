@@ -1,11 +1,14 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
   { label: 'Home Feed', icon: 'HomeIcon', path: '/home-feed', badge: null },
+  { label: 'Notifications', icon: 'BellIcon', path: '/notifications', badge: null, notifBadge: true },
   { label: 'Messages', icon: 'ChatBubbleLeftRightIcon', path: '/chats-messaging', badge: '12' },
   { label: 'Videos & Live', icon: 'PlayCircleIcon', path: '/video-live-feed', badge: '3' },
   { label: 'Live Stream', icon: 'SignalIcon', path: '/live-stream', badge: 'LIVE' },
@@ -35,7 +38,6 @@ const navItems = [
 ];
 
 const secondaryItems = [
-  { label: 'Notifications', icon: 'BellIcon', path: '/home-feed', badge: '5' },
   { label: 'Bookmarks', icon: 'BookmarkIcon', path: '/home-feed' },
   { label: 'Settings', icon: 'Cog6ToothIcon', path: '/home-feed' },
   { label: 'Privacy Policy', icon: 'ShieldCheckIcon', path: '/privacy-policy' },
@@ -48,6 +50,31 @@ interface SidebarProps {
 
 export default function Sidebar({ activePath }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user) return;
+    const supabase = createClient();
+
+    const fetchUnread = async () => {
+      const { count } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+      setUnreadCount(count || 0);
+    };
+
+    fetchUnread();
+
+    const channel = supabase
+      .channel('notif_count')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, fetchUnread)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   return (
     <aside
@@ -120,6 +147,7 @@ export default function Sidebar({ activePath }: SidebarProps) {
         )}
         {navItems.map((item) => {
           const isActive = activePath === item.path;
+          const showNotifBadge = (item as any).notifBadge && unreadCount > 0;
           return (
             <Link
               key={`nav-${item.path}-${item.label}`}
@@ -135,16 +163,30 @@ export default function Sidebar({ activePath }: SidebarProps) {
                   style={{ background: 'linear-gradient(180deg, #00d2ff, #9b59ff)' }}
                 />
               )}
-              <Icon
-                name={item.icon as any}
-                size={18}
-                className={isActive ? 'text-cyan-glow' : 'text-slate-500 group-hover:text-slate-300'}
-                style={isActive ? { filter: 'drop-shadow(0 0 6px rgba(0,210,255,0.6))' } : {}}
-              />
+              <div className="relative">
+                <Icon
+                  name={item.icon as any}
+                  size={18}
+                  className={isActive ? 'text-cyan-glow' : 'text-slate-500 group-hover:text-slate-300'}
+                  style={isActive ? { filter: 'drop-shadow(0 0 6px rgba(0,210,255,0.6))' } : {}}
+                />
+                {showNotifBadge && collapsed && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-xs flex items-center justify-center font-700 tabular-nums"
+                    style={{ background: '#f87171', color: '#fff', fontSize: 9 }}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </div>
               {!collapsed && (
                 <span className="text-xs font-500 flex-1">{item.label}</span>
               )}
-              {!collapsed && item.badge && (
+              {!collapsed && showNotifBadge && (
+                <span className="text-xs font-700 px-1.5 py-0.5 rounded-full tabular-nums"
+                  style={{ background: 'rgba(248,113,113,0.2)', color: '#f87171', border: '1px solid rgba(248,113,113,0.3)' }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+              {!collapsed && !showNotifBadge && item.badge && (
                 <span
                   className="text-xs font-700 px-1.5 py-0.5 rounded-full tabular-nums"
                   style={item.badge === 'AI'
@@ -155,7 +197,7 @@ export default function Sidebar({ activePath }: SidebarProps) {
                   {item.badge}
                 </span>
               )}
-              {collapsed && item.badge && (
+              {collapsed && !showNotifBadge && item.badge && (
                 <span
                   className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-xs flex items-center justify-center font-700 tabular-nums"
                   style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', color: '#050508' }}
@@ -182,14 +224,6 @@ export default function Sidebar({ activePath }: SidebarProps) {
           >
             <Icon name={item.icon as any} size={17} className="text-slate-600 group-hover:text-slate-400" />
             {!collapsed && <span className="text-xs font-400 flex-1">{item.label}</span>}
-            {!collapsed && item.badge && (
-              <span
-                className="text-xs font-600 px-1.5 py-0.5 rounded-full tabular-nums"
-                style={{ background: 'rgba(192,132,252,0.15)', color: '#c084fc', border: '1px solid rgba(192,132,252,0.2)' }}
-              >
-                {item.badge}
-              </span>
-            )}
           </Link>
         ))}
       </nav>
