@@ -39,7 +39,7 @@ const navItems = [
 
 const secondaryItems = [
   { label: 'Bookmarks', icon: 'BookmarkIcon', path: '/home-feed' },
-  { label: 'Settings', icon: 'Cog6ToothIcon', path: '/home-feed' },
+  { label: 'Settings', icon: 'Cog6ToothIcon', path: '/user-settings' },
   { label: 'Privacy Policy', icon: 'ShieldCheckIcon', path: '/privacy-policy' },
   { label: 'Terms of Service', icon: 'DocumentTextIcon', path: '/terms-of-service' },
 ];
