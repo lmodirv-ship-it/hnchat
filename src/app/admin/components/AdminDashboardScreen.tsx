@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Icon from '@/components/ui/AppIcon';
+import Link from 'next/link';
 
 interface AdminStats {
   total_users: number;
@@ -186,8 +187,8 @@ export default function AdminDashboardScreen() {
           <div className="flex items-center justify-between px-5 py-4"
             style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
             <h3 className="text-sm font-semibold text-slate-200">Recent Users</h3>
-            <a href="/admin/users" className="text-xs font-medium transition-colors hover:text-white"
-              style={{ color: '#00d2ff' }}>View all →</a>
+            <Link href="/admin/users" className="text-xs font-medium transition-colors hover:text-white"
+              style={{ color: '#00d2ff' }}>View all →</Link>
           </div>
           <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
             {recentUsers.map((u) => (
@@ -226,8 +227,8 @@ export default function AdminDashboardScreen() {
           <div className="flex items-center justify-between px-5 py-4"
             style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
             <h3 className="text-sm font-semibold text-slate-200">Recent Posts</h3>
-            <a href="/admin/posts" className="text-xs font-medium transition-colors hover:text-white"
-              style={{ color: '#00d2ff' }}>View all →</a>
+            <Link href="/admin/posts" className="text-xs font-medium transition-colors hover:text-white"
+              style={{ color: '#00d2ff' }}>View all →</Link>
           </div>
           <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
             {recentPosts.map((p) => (

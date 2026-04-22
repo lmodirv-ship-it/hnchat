@@ -8,6 +8,7 @@ import { postService, reportService } from '@/lib/services/hnChatService';
 import { useAuth } from '@/contexts/AuthContext';
 import { createClient } from '@/lib/supabase/client';
 import { trackFunnelStep } from '@/lib/analytics';
+import { useRouter } from 'next/navigation';
 
 function formatNum(n: number) {
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
@@ -92,6 +93,7 @@ const PAGE_SIZE = 10;
 
 export default function PostFeed() {
   const { user } = useAuth();
+  const router = useRouter();
   const [posts, setPosts] = useState<any[]>([]);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [bookmarkedPosts, setBookmarkedPosts] = useState<Set<string>>(new Set());
@@ -401,7 +403,9 @@ export default function PostFeed() {
             <p className="text-white font-700 text-lg">Your feed is empty</p>
             <p className="text-slate-500 text-sm mt-1">Follow creators or be the first to post something!</p>
           </div>
-          <button className="px-6 py-3 rounded-2xl font-600 text-sm"
+          <button
+            onClick={() => router.push('/search-engine')}
+            className="px-6 py-3 rounded-2xl font-600 text-sm"
             style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', color: '#050508' }}>
             Discover Creators
           </button>
