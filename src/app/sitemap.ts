@@ -25,6 +25,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${baseUrl}/pages-groups`, priority: 0.75, changeFrequency: 'daily' as const },
     { url: `${baseUrl}/geo-content`, priority: 0.7, changeFrequency: 'weekly' as const },
     { url: `${baseUrl}/invite`, priority: 0.75, changeFrequency: 'monthly' as const },
+    { url: `${baseUrl}/points-rewards`, priority: 0.75, changeFrequency: 'weekly' as const },
     { url: `${baseUrl}/stories-editor`, priority: 0.7, changeFrequency: 'daily' as const },
     { url: `${baseUrl}/app-store`, priority: 0.65, changeFrequency: 'weekly' as const },
     { url: `${baseUrl}/profile`, priority: 0.7, changeFrequency: 'daily' as const },

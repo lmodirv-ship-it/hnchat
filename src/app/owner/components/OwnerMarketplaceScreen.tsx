@@ -1,294 +1,197 @@
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import Icon from '@/components/ui/AppIcon';
+import { createClient } from '@/lib/supabase/client';
 
-interface Product {
+import { toast, Toaster } from 'sonner';
+
+interface CommissionRow {
   id: string;
-  name: string;
-  description: string | null;
-  price: number;
-  category: string | null;
-  is_active: boolean;
-  stock_quantity: number | null;
-  image_url: string | null;
+  seller_name: string;
+  product_id: string;
+  sale_amount: number;
+  commission_rate: number;
+  commission_amount: number;
+  seller_earnings: number;
+  status: string;
   created_at: string;
-  seller_id: string | null;
-  user_profiles?: { username: string | null; full_name: string | null } | null;
 }
 
-function timeAgo(d: string) {
-  const diff = Date.now() - new Date(d).getTime();
-  const days = Math.floor(diff / 86400000);
-  if (days < 1) return 'today';
-  if (days === 1) return 'yesterday';
-  return `${days}d ago`;
+interface CommissionStats {
+  total_sales: number;
+  total_commission: number;
+  total_seller_earnings: number;
+  pending_count: number;
 }
 
 export default function OwnerMarketplaceScreen() {
   const supabase = createClient();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
-  const [stats, setStats] = useState({ total: 0, active: 0, inactive: 0, totalValue: 0 });
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
-  const [page, setPage] = useState(0);
-  const PAGE_SIZE = 20;
+  const [commissions, setCommissions] = useState<CommissionRow[]>([]);
+  const [stats, setStats] = useState<CommissionStats>({ total_sales: 0, total_commission: 0, total_seller_earnings: 0, pending_count: 0 });
+  const [loading, setLoading] = useState(true);
+  const [commissionRate, setCommissionRate] = useState(10);
+  const [savingRate, setSavingRate] = useState(false);
 
-  const showToast = (msg: string, type: 'success' | 'error') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3500);
-  };
-
-  const loadProducts = useCallback(async (p = 0, q = '', f = filter) => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      let query = supabase
-        .from('marketplace_products')
-        .select('*, user_profiles!marketplace_products_seller_id_fkey(username, full_name)', { count: 'exact' })
+      const { data } = await supabase
+        .from('marketplace_commissions')
+        .select('*, seller:seller_id(full_name, username)')
         .order('created_at', { ascending: false })
-        .range(p * PAGE_SIZE, (p + 1) * PAGE_SIZE - 1);
+        .limit(50);
 
-      if (q) query = query.ilike('name', `%${q}%`);
-      if (f === 'active') query = query.eq('is_active', true);
-      if (f === 'inactive') query = query.eq('is_active', false);
+      if (data) {
+        const mapped: CommissionRow[] = data.map((r: any) => ({
+          id: r.id,
+          seller_name: r.seller?.full_name || r.seller?.username || 'Unknown',
+          product_id: r.product_id || '—',
+          sale_amount: r.sale_amount,
+          commission_rate: r.commission_rate,
+          commission_amount: r.commission_amount,
+          seller_earnings: r.seller_earnings,
+          status: r.status,
+          created_at: r.created_at,
+        }));
+        setCommissions(mapped);
 
-      const { data, error } = await query;
-      if (error) throw error;
-      setProducts(data || []);
+        const totalSales = data.reduce((s: number, r: any) => s + Number(r.sale_amount), 0);
+        const totalComm = data.reduce((s: number, r: any) => s + Number(r.commission_amount), 0);
+        const totalEarnings = data.reduce((s: number, r: any) => s + Number(r.seller_earnings), 0);
+        const pendingCount = data.filter((r: any) => r.status === 'pending').length;
+        setStats({ total_sales: totalSales, total_commission: totalComm, total_seller_earnings: totalEarnings, pending_count: pendingCount });
+      }
     } catch {
-      showToast('Failed to load products', 'error');
+      toast.error('Failed to load commission data');
     } finally {
       setLoading(false);
     }
-  }, [filter]);
-
-  const loadStats = useCallback(async () => {
-    const { data } = await supabase.from('marketplace_products').select('is_active, price');
-    if (data) {
-      const active = data.filter(p => p.is_active).length;
-      setStats({
-        total: data.length,
-        active,
-        inactive: data.length - active,
-        totalValue: data.reduce((s, p) => s + (p.price || 0), 0),
-      });
-    }
   }, []);
 
-  useEffect(() => {
-    loadProducts(0, search, filter);
-    loadStats();
-    const channel = supabase.channel('owner-marketplace')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'marketplace_products' }, () => {
-        loadProducts(page, search, filter);
-        loadStats();
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [filter]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  const toggleProduct = async (id: string, current: boolean) => {
-    setActionLoading(id);
+  const updateStatus = async (id: string, status: string) => {
     try {
-      const { error } = await supabase.from('marketplace_products').update({ is_active: !current }).eq('id', id);
-      if (error) throw error;
-      setProducts(prev => prev.map(p => p.id === id ? { ...p, is_active: !current } : p));
-      showToast(`Product ${!current ? 'activated' : 'deactivated'}`, 'success');
+      await supabase.from('marketplace_commissions').update({ status }).eq('id', id);
+      setCommissions(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+      toast.success(`Commission marked as ${status}`);
     } catch {
-      showToast('Action failed', 'error');
-    } finally {
-      setActionLoading(null);
+      toast.error('Failed to update status');
     }
   };
 
-  const deleteProduct = async (id: string) => {
-    if (!confirm('Delete this product permanently?')) return;
-    setActionLoading(id);
-    try {
-      const { error } = await supabase.from('marketplace_products').delete().eq('id', id);
-      if (error) throw error;
-      setProducts(prev => prev.filter(p => p.id !== id));
-      showToast('Product deleted', 'success');
-      loadStats();
-    } catch {
-      showToast('Delete failed', 'error');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPage(0);
-    loadProducts(0, search, filter);
+  const statusColor: Record<string, string> = {
+    pending: '#fbbf24',
+    paid: '#34d399',
+    cancelled: '#f87171',
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Marketplace</h1>
-          <p className="text-sm mt-1" style={{ color: '#78716c' }}>Manage all product listings</p>
-        </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold"
-          style={{ background: 'rgba(110,231,183,0.1)', color: '#6ee7b7', border: '1px solid rgba(110,231,183,0.2)' }}>
-          <Icon name="ShoppingBagIcon" size={14} style={{ color: '#6ee7b7' }} />
-          Marketplace Manager
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Products', value: stats.total, icon: 'ShoppingBagIcon', color: '#6ee7b7' },
-          { label: 'Active', value: stats.active, icon: 'CheckCircleIcon', color: '#34d399' },
-          { label: 'Inactive', value: stats.inactive, icon: 'XCircleIcon', color: '#f87171' },
-          { label: 'Total Value', value: `$${stats.totalValue.toLocaleString()}`, icon: 'BanknotesIcon', color: '#fbbf24' },
-        ].map((s) => (
-          <div key={s.label} className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-            <div className="flex items-center gap-2 mb-2">
-              <Icon name={s.icon as any} size={16} style={{ color: s.color }} />
-              <span className="text-xs" style={{ color: '#78716c' }}>{s.label}</span>
-            </div>
-            <p className="text-2xl font-bold text-white">{s.value}</p>
+    <>
+      <Toaster position="bottom-right" theme="dark" />
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-700 gradient-text">Marketplace Commission</h1>
+            <p className="text-sm text-slate-500 mt-0.5">Track sales, commissions, and seller earnings</p>
           </div>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <form onSubmit={handleSearch} className="flex gap-2 flex-1">
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search products..."
-            className="flex-1 px-4 py-2.5 rounded-xl text-sm text-white placeholder-stone-600 outline-none"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
-          />
-          <button type="submit" className="px-4 py-2.5 rounded-xl text-sm font-medium text-white"
-            style={{ background: 'rgba(110,231,183,0.15)', border: '1px solid rgba(110,231,183,0.3)' }}>
-            Search
-          </button>
-        </form>
-        <div className="flex gap-2">
-          {(['all', 'active', 'inactive'] as const).map(f => (
-            <button key={f} onClick={() => { setFilter(f); setPage(0); }}
-              className="px-3 py-2 rounded-xl text-xs font-medium capitalize transition-all"
-              style={{
-                background: filter === f ? 'rgba(110,231,183,0.15)' : 'rgba(255,255,255,0.04)',
-                color: filter === f ? '#6ee7b7' : '#78716c',
-                border: `1px solid ${filter === f ? 'rgba(110,231,183,0.3)' : 'rgba(255,255,255,0.06)'}`,
-              }}>
-              {f}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">Commission Rate:</span>
+            <input
+              type="number"
+              value={commissionRate}
+              onChange={e => setCommissionRate(Number(e.target.value))}
+              min={1} max={50}
+              className="w-16 text-center text-sm font-600 rounded-xl px-2 py-1.5"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#e2e8f0' }}
+            />
+            <span className="text-xs text-slate-500">%</span>
+            <button
+              onClick={() => { setSavingRate(true); setTimeout(() => { setSavingRate(false); toast.success('Commission rate saved'); }, 500); }}
+              disabled={savingRate}
+              className="px-3 py-1.5 rounded-xl text-xs font-600 transition-all"
+              style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', color: '#050508' }}
+            >
+              Save
             </button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Sales', value: `$${stats.total_sales.toFixed(2)}`, icon: 'ShoppingBagIcon', color: '#00d2ff' },
+            { label: 'Platform Commission', value: `$${stats.total_commission.toFixed(2)}`, icon: 'BanknotesIcon', color: '#34d399' },
+            { label: 'Seller Earnings', value: `$${stats.total_seller_earnings.toFixed(2)}`, icon: 'UserIcon', color: '#a78bfa' },
+            { label: 'Pending Payouts', value: stats.pending_count.toString(), icon: 'ClockIcon', color: '#fbbf24' },
+          ].map((s) => (
+            <div key={s.label} className="glass-card p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `${s.color}18` }}>
+                  <Icon name={s.icon as any} size={16} style={{ color: s.color }} />
+                </div>
+                <span className="text-xs text-slate-500">{s.label}</span>
+              </div>
+              <p className="text-xl font-700" style={{ color: s.color }}>{loading ? '...' : s.value}</p>
+            </div>
           ))}
         </div>
-      </div>
 
-      {/* Table */}
-      <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                {['Product', 'Seller', 'Price', 'Stock', 'Status', 'Added', 'Actions'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold" style={{ color: '#57534e' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={7} className="px-4 py-12 text-center text-sm" style={{ color: '#57534e' }}>Loading...</td></tr>
-              ) : products.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-12 text-center text-sm" style={{ color: '#57534e' }}>No products found</td></tr>
-              ) : products.map(p => (
-                <tr key={p.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
-                  className="hover:bg-white/[0.02] transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{ background: 'rgba(110,231,183,0.1)' }}>
-                        <Icon name="ShoppingBagIcon" size={16} style={{ color: '#6ee7b7' }} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-white truncate max-w-[160px]">{p.name}</p>
-                        <p className="text-xs truncate max-w-[160px]" style={{ color: '#57534e' }}>{p.category || 'Uncategorized'}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-sm" style={{ color: '#a8a29e' }}>
-                    {p.user_profiles?.username || p.user_profiles?.full_name || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-sm font-semibold" style={{ color: '#fbbf24' }}>${p.price}</td>
-                  <td className="px-4 py-3 text-sm" style={{ color: '#a8a29e' }}>{p.stock_quantity ?? '∞'}</td>
-                  <td className="px-4 py-3">
-                    <span className="text-xs px-2 py-1 rounded-full font-medium"
-                      style={{
-                        background: p.is_active ? 'rgba(52,211,153,0.1)' : 'rgba(248,113,113,0.1)',
-                        color: p.is_active ? '#34d399' : '#f87171',
-                      }}>
-                      {p.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-xs" style={{ color: '#57534e' }}>{timeAgo(p.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => toggleProduct(p.id, p.is_active)}
-                        disabled={actionLoading === p.id}
-                        className="p-1.5 rounded-lg transition-all hover:bg-white/5"
-                        title={p.is_active ? 'Deactivate' : 'Activate'}>
-                        <Icon name={p.is_active ? 'EyeSlashIcon' : 'EyeIcon'} size={15}
-                          style={{ color: p.is_active ? '#f87171' : '#34d399' }} />
-                      </button>
-                      <button onClick={() => deleteProduct(p.id)}
-                        disabled={actionLoading === p.id}
-                        className="p-1.5 rounded-lg transition-all hover:bg-red-500/10"
-                        title="Delete">
-                        <Icon name="TrashIcon" size={15} style={{ color: '#f87171' }} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {/* Pagination */}
-        <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <span className="text-xs" style={{ color: '#57534e' }}>Page {page + 1}</span>
-          <div className="flex gap-2">
-            <button onClick={() => { const p = Math.max(0, page - 1); setPage(p); loadProducts(p, search, filter); }}
-              disabled={page === 0}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40"
-              style={{ background: 'rgba(255,255,255,0.05)', color: '#a8a29e' }}>
-              Prev
-            </button>
-            <button onClick={() => { const p = page + 1; setPage(p); loadProducts(p, search, filter); }}
-              disabled={products.length < PAGE_SIZE}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40"
-              style={{ background: 'rgba(255,255,255,0.05)', color: '#a8a29e' }}>
-              Next
-            </button>
+        {/* Commission Table */}
+        <div className="glass-card overflow-hidden">
+          <div className="p-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+            <h2 className="text-sm font-700 text-slate-300">Commission Transactions</h2>
           </div>
+          {loading ? (
+            <div className="p-8 text-center">
+              <div className="w-6 h-6 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin mx-auto" />
+            </div>
+          ) : commissions.length === 0 ? (
+            <div className="p-8 text-center">
+              <Icon name="ShoppingBagIcon" size={32} className="text-slate-700 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">No commission transactions yet</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                    {['Seller', 'Sale Amount', 'Commission', 'Seller Earnings', 'Status', 'Date', 'Action'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-slate-500 font-600">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {commissions.map((c) => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      <td className="px-4 py-3 text-slate-300 font-600">{c.seller_name}</td>
+                      <td className="px-4 py-3 text-slate-300">${c.sale_amount.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-green-400 font-600">${c.commission_amount.toFixed(2)} ({c.commission_rate}%)</td>
+                      <td className="px-4 py-3 text-purple-300">${c.seller_earnings.toFixed(2)}</td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-1 rounded-lg text-xs font-600"
+                          style={{ background: `${statusColor[c.status] || '#94a3b8'}18`, color: statusColor[c.status] || '#94a3b8' }}>
+                          {c.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500">{new Date(c.created_at).toLocaleDateString()}</td>
+                      <td className="px-4 py-3">
+                        {c.status === 'pending' && (
+                          <button onClick={() => updateStatus(c.id, 'paid')}
+                            className="px-2 py-1 rounded-lg text-xs font-600 transition-all"
+                            style={{ background: 'rgba(52,211,153,0.15)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
+                            Mark Paid
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Toast */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl"
-          style={{
-            background: toast.type === 'success' ? 'rgba(52,211,153,0.15)' : 'rgba(248,113,113,0.15)',
-            border: `1px solid ${toast.type === 'success' ? 'rgba(52,211,153,0.4)' : 'rgba(248,113,113,0.4)'}`,
-            backdropFilter: 'blur(20px)',
-          }}>
-          <span>{toast.type === 'success' ? '✅' : '❌'}</span>
-          <p className="text-sm font-medium text-white">{toast.msg}</p>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

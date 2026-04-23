@@ -19,6 +19,7 @@ const navItems = [
   { label: 'hnShop', icon: 'ShoppingBagIcon', path: '/ecommerce', badge: 'NEW' },
   { label: 'Marketplace', icon: 'TagIcon', path: '/marketplace', badge: null },
   { label: 'Invite & Earn', icon: 'GiftIcon', path: '/invite', badge: '🎁' },
+  { label: 'Points & Rewards', icon: 'SparklesIcon', path: '/points-rewards', badge: '⭐' },
   { label: 'Subscription', icon: 'CreditCardIcon', path: '/subscription', badge: '💎' },
   { label: 'hnTrade Crypto', icon: 'CurrencyDollarIcon', path: '/crypto-trading', badge: '📈' },
   { label: 'GeoContent', icon: 'MapPinIcon', path: '/geo-content', badge: null },

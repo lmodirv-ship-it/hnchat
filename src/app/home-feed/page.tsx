@@ -7,13 +7,23 @@ import TrendingSidebar from './components/TrendingSidebar';
 import AdBanner from '@/components/AdBanner';
 
 export const metadata: Metadata = {
-  title: 'Home Feed — hnChat',
-  description: 'Your personalized social feed on hnChat. Discover posts, stories, trending content, and connect with creators worldwide.',
-  alternates: { canonical: 'https://hnchat.net/home-feed' },
+  title: 'Home Feed — hnChat | منصة التواصل الاجتماعي',
+  description: 'Your personalized social feed on hnChat. Discover posts, stories, trending content, and connect with creators worldwide. | اكتشف المنشورات والقصص والمحتوى الرائج.',
+  alternates: {
+    canonical: 'https://hnchat.net/home-feed',
+    languages: {
+      'en': 'https://hnchat.net/home-feed',
+      'ar': 'https://hnchat.net/ar/home-feed',
+      'fr': 'https://hnchat.net/fr/home-feed',
+      'es': 'https://hnchat.net/es/home-feed',
+    },
+  },
   openGraph: {
     title: 'Home Feed — hnChat',
     description: 'Your personalized social feed. Discover posts, stories, and trending content.',
     url: 'https://hnchat.net/home-feed',
+    locale: 'en_US',
+    alternateLocale: ['ar_MA', 'fr_FR', 'es_ES'],
   },
 };
 

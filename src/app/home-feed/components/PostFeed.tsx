@@ -95,6 +95,7 @@ const PAGE_SIZE = 10;
 export default function PostFeed() {
   const { user } = useAuth();
   const router = useRouter();
+  const supabase = createClient();
   const [posts, setPosts] = useState<any[]>([]);
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [bookmarkedPosts, setBookmarkedPosts] = useState<Set<string>>(new Set());
@@ -110,6 +111,7 @@ export default function PostFeed() {
   const [reportModal, setReportModal] = useState<{ postId: string } | null>(null);
   const [reportReason, setReportReason] = useState('');
   const [reportLoading, setReportLoading] = useState(false);
+  const [shareModal, setShareModal] = useState<{ postId: string } | null>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
 
   const loadFeed = useCallback(async (pageNum = 0, append = false) => {
@@ -159,7 +161,6 @@ export default function PostFeed() {
     return () => { supabase.removeChannel(channel); };
   }, [loadFeed]);
 
-  // Infinite scroll observer
   useEffect(() => {
     const el = loaderRef.current;
     if (!el) return;
@@ -177,13 +178,37 @@ export default function PostFeed() {
     return () => observer.disconnect();
   }, [hasMore, loadingMore, loading, page, loadFeed]);
 
+  const awardEngagementPoints = async (type: 'like' | 'comment' | 'share' | 'post') => {
+    if (!user) return;
+    const pointsMap = { like: 2, comment: 5, share: 10, post: 15 };
+    const reasonMap = {
+      like: 'Liked a post',
+      comment: 'Commented on a post',
+      share: 'Shared a post',
+      post: 'Created a new post',
+    };
+    try {
+      await supabase.rpc('award_points', {
+        p_user_id: user.id,
+        p_amount: pointsMap[type],
+        p_type: `engagement_${type}`,
+        p_reason: reasonMap[type],
+      });
+    } catch {
+      // silently fail — points are bonus
+    }
+  };
+
   const toggleLike = async (postId: string) => {
     if (!user) { toast.error('Sign in to like posts'); return; }
     const isLiked = likedPosts.has(postId);
     setLikedPosts((prev) => { const next = new Set(prev); isLiked ? next.delete(postId) : next.add(postId); return next; });
     setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, likes_count: p.likes_count + (isLiked ? -1 : 1) } : p));
-    if (!isLiked) trackFunnelStep('like', { post_id: postId });
-    if (!isLiked) trackContentLike(postId, 'post');
+    if (!isLiked) {
+      trackFunnelStep('like', { post_id: postId });
+      trackContentLike(postId, 'post');
+      awardEngagementPoints('like');
+    }
     try {
       if (isLiked) await postService.unlikePost(postId);
       else await postService.likePost(postId);
@@ -215,7 +240,8 @@ export default function PostFeed() {
         setPosts((prev) => [created, ...prev]);
         setNewPost('');
         trackPostCreated('text');
-        toast.success('Post published successfully!');
+        awardEngagementPoints('post');
+        toast.success('Post published! +15 points 🎉');
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to publish post');
@@ -233,27 +259,45 @@ export default function PostFeed() {
       setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
       setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p));
       trackContentComment(postId, 'post');
-      toast.success('Comment added!');
+      awardEngagementPoints('comment');
+      toast.success('Comment added! +5 points');
     } catch (err: any) {
       toast.error(err.message || 'Failed to add comment');
     }
   };
 
   const handleShare = async (postId: string) => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/home-feed?post=${postId}`);
+    setShareModal({ postId });
+  };
+
+  const shareVia = async (platform: string, postId: string) => {
+    const postUrl = `${window.location.origin}/home-feed?post=${postId}`;
+    const text = 'Check this out on hnChat!';
+    const urls: Record<string, string> = {
+      clipboard: postUrl,
+      whatsapp: `https://wa.me/?text=${encodeURIComponent(text + ' ' + postUrl)}`,
+      twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(postUrl)}`,
+      telegram: `https://t.me/share/url?url=${encodeURIComponent(postUrl)}&text=${encodeURIComponent(text)}`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(postUrl)}`,
+    };
+
+    if (platform === 'clipboard') {
+      await navigator.clipboard.writeText(postUrl);
       toast.success('Link copied to clipboard!');
-      trackViralShare('clipboard', postId, 'post');
-      // Increment share count
-      const supabase = createClient();
-      const post = posts.find(p => p.id === postId);
-      if (post) {
-        await supabase.from('posts').update({ shares_count: (post.shares_count || 0) + 1 }).eq('id', postId);
-        setPosts(prev => prev.map(p => p.id === postId ? { ...p, shares_count: (p.shares_count || 0) + 1 } : p));
-      }
-    } catch {
-      toast.error('Failed to copy link');
+    } else {
+      window.open(urls[platform], '_blank');
     }
+
+    trackViralShare(platform, postId, 'post');
+    awardEngagementPoints('share');
+
+    // Increment share count
+    const post = posts.find(p => p.id === postId);
+    if (post) {
+      await supabase.from('posts').update({ shares_count: (post.shares_count || 0) + 1 }).eq('id', postId);
+      setPosts(prev => prev.map(p => p.id === postId ? { ...p, shares_count: (p.shares_count || 0) + 1 } : p));
+    }
+    setShareModal(null);
   };
 
   const submitReport = async () => {
@@ -280,6 +324,40 @@ export default function PostFeed() {
   return (
     <>
       <Toaster position="bottom-right" theme="dark" />
+
+      {/* Share Modal */}
+      {shareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="rounded-2xl p-6 w-80 space-y-4"
+            style={{ background: 'rgba(10,10,18,0.98)', border: '1px solid rgba(0,210,255,0.2)' }}>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-700 text-white">Share Post</p>
+              <button onClick={() => setShareModal(null)} className="text-slate-500 hover:text-white transition-colors">
+                <Icon name="XMarkIcon" size={18} />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: 'whatsapp', label: 'WhatsApp', color: '#25D366', icon: 'ChatBubbleLeftRightIcon' },
+                { id: 'twitter', label: 'Twitter/X', color: '#1DA1F2', icon: 'GlobeAltIcon' },
+                { id: 'telegram', label: 'Telegram', color: '#0088cc', icon: 'PaperAirplaneIcon' },
+                { id: 'facebook', label: 'Facebook', color: '#1877F2', icon: 'UserGroupIcon' },
+                { id: 'clipboard', label: 'Copy Link', color: '#00d2ff', icon: 'ClipboardDocumentIcon' },
+              ].map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => shareVia(s.id, shareModal.postId)}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-600 transition-all hover:opacity-80"
+                  style={{ background: `${s.color}18`, border: `1px solid ${s.color}30`, color: s.color }}
+                >
+                  <Icon name={s.icon as any} size={14} />
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Report Modal */}
       {reportModal && (
@@ -549,7 +627,7 @@ export default function PostFeed() {
           </div>
         )}
         {!hasMore && posts.length > 0 && (
-          <p className="text-slate-600 text-xs">You've seen everything 🎉</p>
+          <p className="text-slate-600 text-xs">You have seen everything 🎉</p>
         )}
       </div>
     </>
