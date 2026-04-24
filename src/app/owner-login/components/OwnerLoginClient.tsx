@@ -1,18 +1,26 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState } from 'react';
 import AppLogo from '@/components/ui/AppLogo';
 
 const OWNER_EMAIL = 'lmodirv@gmail.com';
 
 export default function OwnerLoginClient() {
-  const router = useRouter();
-  const [status, setStatus] = useState<'idle' | 'loading'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'sent' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('loading');
-    router.replace('/owner');
+    setErrorMsg('');
+    try {
+      const res = await fetch('/api/owner-login', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to send login link');
+      setStatus('sent');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'حدث خطأ، حاول مجدداً');
+      setStatus('error');
+    }
   };
 
   return (
@@ -45,29 +53,55 @@ export default function OwnerLoginClient() {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4 text-left">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1.5">Owner Email</label>
-              <div className="w-full px-4 py-3 rounded-xl text-sm text-slate-300"
-                style={{
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                }}>
-                {OWNER_EMAIL}
+          {status === 'sent' ? (
+            <div className="space-y-4">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto"
+                style={{ background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.3)' }}>
+                <span className="text-3xl">✉️</span>
               </div>
+              <div>
+                <p className="text-sm font-semibold text-white">تم إرسال رابط الدخول</p>
+                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                  تحقق من بريدك الإلكتروني<br />
+                  <span style={{ color: '#00d2ff' }}>{OWNER_EMAIL}</span><br />
+                  وانقر على الرابط للدخول
+                </p>
+              </div>
+              <button
+                onClick={() => setStatus('idle')}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors underline">
+                إعادة الإرسال
+              </button>
             </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4 text-left">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Owner Email</label>
+                <div className="w-full px-4 py-3 rounded-xl text-sm text-slate-300"
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                  }}>
+                  {OWNER_EMAIL}
+                </div>
+              </div>
 
-            <button
-              type="submit"
-              disabled={status === 'loading'}
-              className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
-              style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', boxShadow: '0 0 20px rgba(0,210,255,0.3)' }}>
-              {status === 'loading' && (
-                <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+              {status === 'error' && (
+                <p className="text-xs text-red-400 text-center">{errorMsg}</p>
               )}
-              {status === 'loading' ? 'جاري الدخول...' : 'دخول'}
-            </button>
-          </form>
+
+              <button
+                type="submit"
+                disabled={status === 'loading'}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', boxShadow: '0 0 20px rgba(0,210,255,0.3)' }}>
+                {status === 'loading' && (
+                  <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                )}
+                {status === 'loading' ? 'جاري الإرسال...' : 'إرسال رابط الدخول'}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>
