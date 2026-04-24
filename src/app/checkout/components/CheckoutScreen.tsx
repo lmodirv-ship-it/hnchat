@@ -161,9 +161,39 @@ export default function CheckoutScreen() {
         });
         await supabase.from('orders').update({ status: 'pending_verification' }).eq('id', orderId);
       }
+
+      // 🔔 Brevo: trigger purchase confirmation email
+      if (user?.email) {
+        fetch('/api/email/purchase-confirmation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: user.email,
+            name: user.user_metadata?.full_name || user.email.split('@')[0],
+            orderId,
+            items: items.map((i) => ({ name: i.name, price: i.price, quantity: i.quantity })),
+            total,
+          }),
+        }).catch(() => {});
+      }
+
       toast.success('Receipt uploaded! We\'ll verify within 24 hours.');
       setStep('confirm');
     } catch {
+      // 🔔 Brevo: trigger purchase confirmation email even on fallback path
+      if (user?.email) {
+        fetch('/api/email/purchase-confirmation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: user.email,
+            name: user.user_metadata?.full_name || user.email.split('@')[0],
+            orderId,
+            items: items.map((i) => ({ name: i.name, price: i.price, quantity: i.quantity })),
+            total,
+          }),
+        }).catch(() => {});
+      }
       toast.success('Order placed! Please send your receipt to payments@hnchat.net');
       setStep('confirm');
     } finally {

@@ -11,6 +11,8 @@ export const EMAIL_TAGS = {
   trendingAlert: 'trending_alert',
   notificationDigest: 'notification_digest',
   postInteraction: 'post_interaction',
+  purchaseConfirmation: 'purchase_confirmation',
+  messageReceived: 'message_received',
 };
 
 // ─── Contact Management ───────────────────────────────────────────────────────
@@ -423,6 +425,153 @@ export async function sendPostInteractionEmail(
     </div>
     <p style="color:#334155;font-size:12px;text-align:center;margin-top:24px;">
       © 2026 hnChat · <a href="https://hnchat.net/preferences" style="color:#475569;">إدارة الإشعارات</a>
+    </p>
+  </div>
+</body>
+</html>`,
+  });
+  return result.success;
+}
+
+// ─── Purchase Confirmation Email ──────────────────────────────────────────────
+
+export async function sendPurchaseConfirmationEmail(
+  email: string,
+  name: string,
+  orderId: string,
+  items: Array<{ name: string; price: number; quantity: number }>,
+  total: number
+): Promise<boolean> {
+  const firstName = name?.split(' ')[0] || 'there';
+
+  // Update contact attribute to track last purchase
+  updateContactAttributes(email, {
+    LAST_PURCHASE_DATE: new Date().toISOString(),
+    TOTAL_ORDERS: 1,
+  }).catch(() => {});
+
+  const itemsHtml = items
+    .map(
+      (item) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div>
+        <p style="color:#e2e8f0;font-size:14px;font-weight:600;margin:0;">${item.name}</p>
+        <p style="color:#64748b;font-size:12px;margin:3px 0 0;">x${item.quantity}</p>
+      </div>
+      <span style="color:#00d2ff;font-size:14px;font-weight:700;">$${(item.price * item.quantity).toFixed(2)}</span>
+    </div>`
+    )
+    .join('');
+
+  const result = await sendEmail({
+    sender: SENDER,
+    to: [{ email, name }],
+    subject: `✅ تأكيد طلبك #${orderId} على hnChat Marketplace`,
+    tags: [EMAIL_TAGS.purchaseConfirmation],
+    htmlContent: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#050508;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:560px;margin:0 auto;padding:40px 24px;">
+    <div style="text-align:center;margin-bottom:32px;">
+      <div style="display:inline-block;background:linear-gradient(135deg,#00d2ff,#9b59ff);border-radius:16px;padding:12px 20px;">
+        <span style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.5px;">hnChat</span>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:24px;padding:40px 32px;">
+      <div style="text-align:center;margin-bottom:24px;">
+        <div style="display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;border-radius:50%;background:rgba(52,211,153,0.12);border:2px solid rgba(52,211,153,0.3);margin-bottom:16px;">
+          <span style="font-size:28px;">✅</span>
+        </div>
+        <h1 style="color:#e2e8f0;font-size:26px;font-weight:800;margin:0 0 6px;">تم تأكيد طلبك!</h1>
+        <p style="color:#94a3b8;font-size:15px;margin:0;">شكراً ${firstName}، طلبك قيد المعالجة.</p>
+      </div>
+      <div style="background:rgba(0,210,255,0.05);border:1px solid rgba(0,210,255,0.12);border-radius:14px;padding:16px 20px;margin-bottom:24px;">
+        <p style="color:#64748b;font-size:12px;font-weight:700;margin:0 0 4px;text-transform:uppercase;letter-spacing:1px;">رقم الطلب</p>
+        <p style="color:#00d2ff;font-size:18px;font-weight:800;margin:0;letter-spacing:1px;">#${orderId}</p>
+      </div>
+      <div style="margin-bottom:24px;">
+        <p style="color:#94a3b8;font-size:13px;font-weight:700;margin:0 0 12px;text-transform:uppercase;letter-spacing:1px;">تفاصيل الطلب</p>
+        ${itemsHtml}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0 0;">
+          <span style="color:#e2e8f0;font-size:15px;font-weight:700;">المجموع الكلي</span>
+          <span style="color:#34d399;font-size:18px;font-weight:800;">$${total.toFixed(2)}</span>
+        </div>
+      </div>
+      <div style="background:rgba(155,89,255,0.06);border:1px solid rgba(155,89,255,0.15);border-radius:14px;padding:16px 20px;margin-bottom:24px;">
+        <p style="color:#9b59ff;font-size:13px;font-weight:700;margin:0 0 6px;">📦 الخطوات التالية</p>
+        <p style="color:#cbd5e1;font-size:14px;margin:0;line-height:1.7;">
+          سيتم مراجعة دفعتك خلال 24 ساعة. ستتلقى إشعاراً فور تأكيد الطلب.
+        </p>
+      </div>
+      <a href="https://hnchat.net/marketplace" style="display:block;text-align:center;background:linear-gradient(135deg,#00d2ff,#9b59ff);color:#050508;font-size:16px;font-weight:700;padding:16px 32px;border-radius:14px;text-decoration:none;">
+        🛍️ تصفح المزيد من المنتجات
+      </a>
+    </div>
+    <p style="color:#334155;font-size:12px;text-align:center;margin-top:24px;">
+      © 2026 hnChat · <a href="https://hnchat.net" style="color:#475569;">hnchat.net</a>
+      · <a href="https://hnchat.net/preferences" style="color:#475569;">إدارة الإشعارات</a>
+    </p>
+  </div>
+</body>
+</html>`,
+  });
+  return result.success;
+}
+
+// ─── Message Received Email ───────────────────────────────────────────────────
+
+export async function sendMessageReceivedEmail(
+  email: string,
+  name: string,
+  senderName: string,
+  messagePreview: string
+): Promise<boolean> {
+  const firstName = name?.split(' ')[0] || 'there';
+  const preview =
+    messagePreview.length > 120 ? messagePreview.slice(0, 120) + '…' : messagePreview;
+
+  const result = await sendEmail({
+    sender: SENDER,
+    to: [{ email, name }],
+    subject: `💬 ${senderName} أرسل لك رسالة على hnChat`,
+    tags: [EMAIL_TAGS.messageReceived],
+    htmlContent: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#050508;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:560px;margin:0 auto;padding:40px 24px;">
+    <div style="text-align:center;margin-bottom:32px;">
+      <div style="display:inline-block;background:linear-gradient(135deg,#00d2ff,#9b59ff);border-radius:16px;padding:12px 20px;">
+        <span style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.5px;">hnChat</span>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:24px;padding:40px 32px;">
+      <div style="display:inline-block;background:rgba(0,210,255,0.1);border:1px solid rgba(0,210,255,0.2);border-radius:100px;padding:6px 16px;margin-bottom:20px;">
+        <span style="color:#00d2ff;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">💬 رسالة جديدة</span>
+      </div>
+      <h1 style="color:#e2e8f0;font-size:24px;font-weight:800;margin:0 0 6px;">
+        ${firstName}، لديك رسالة جديدة!
+      </h1>
+      <p style="color:#94a3b8;font-size:15px;margin:0 0 24px;line-height:1.6;">
+        <strong style="color:#e2e8f0;">${senderName}</strong> أرسل لك رسالة على hnChat.
+      </p>
+      <div style="background:rgba(255,255,255,0.04);border-radius:16px;padding:20px 24px;margin-bottom:28px;border-left:3px solid #00d2ff;">
+        <p style="color:#64748b;font-size:12px;font-weight:700;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px;">${senderName}</p>
+        <p style="color:#cbd5e1;font-size:15px;margin:0;line-height:1.7;font-style:italic;">"${preview}"</p>
+      </div>
+      <a href="https://hnchat.net/chats-messaging" style="display:block;text-align:center;background:linear-gradient(135deg,#00d2ff,#9b59ff);color:#050508;font-size:16px;font-weight:700;padding:16px 32px;border-radius:14px;text-decoration:none;margin-bottom:16px;">
+        💬 رد الآن
+      </a>
+      <p style="color:#475569;font-size:13px;text-align:center;margin:0;">
+        لا تترك ${senderName} ينتظر! 😊
+      </p>
+    </div>
+    <p style="color:#334155;font-size:12px;text-align:center;margin-top:24px;">
+      © 2026 hnChat · <a href="https://hnchat.net" style="color:#475569;">hnchat.net</a>
+      · <a href="https://hnchat.net/preferences" style="color:#475569;">إدارة الإشعارات</a>
     </p>
   </div>
 </body>
