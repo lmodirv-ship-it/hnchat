@@ -5,7 +5,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { PushNotificationProvider } from '@/contexts/PushNotificationContext';
 import { PushStrategyProvider } from '@/contexts/PushStrategyContext';
 import { I18nProvider } from '@/contexts/I18nContext';
-import { Suspense } from 'react';
+
 import GoogleAnalytics from '@/components/GoogleAnalytics';
 import AdSenseScript from '@/components/AdSenseScript';
 import { organizationSchema, webApplicationSchema, faqSchema, softwareAppSchema } from '@/components/SchemaOrg';
@@ -129,9 +129,7 @@ export default function RootLayout({
         <script type="module" async src="https://static.rocket.new/rocket-web.js?_cfg=https%3A%2F%2Fhnchat7959back.builtwithrocket.new&_be=https%3A%2F%2Fappanalytics.rocket.new&_v=0.1.18" />
         <script type="module" defer src="https://static.rocket.new/rocket-shot.js?v=0.0.2" /></head>
       <body>
-        <Suspense fallback={null}>
-          <GoogleAnalytics />
-        </Suspense>
+        <GoogleAnalytics />
         <I18nProvider>
           <AuthProvider>
             <PushNotificationProvider>
