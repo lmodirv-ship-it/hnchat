@@ -44,6 +44,7 @@ const navGroups = [
     items: [
       { href: '/owner/crypto', label: 'Crypto', icon: 'CurrencyDollarIcon', exact: false },
       { href: '/owner/games', label: 'Games Hub', icon: 'PuzzlePieceIcon', exact: false },
+      { href: '/owner/api-keys', label: 'API Keys', icon: 'KeyIcon', exact: false },
       { href: '/owner/settings', label: 'Settings', icon: 'Cog6ToothIcon', exact: false },
     ],
   },
