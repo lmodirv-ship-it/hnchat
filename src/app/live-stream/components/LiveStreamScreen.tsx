@@ -28,7 +28,7 @@ interface ChatMsg {
   gift?: string;
 }
 
-const GIFT_CONFIG: Record<string, { name: string; cost: number }> = {
+const GIFT_CONFIG: Record<string, {name: string;cost: number;}> = {
   '💎': { name: 'Diamond', cost: 50 },
   '🚀': { name: 'Rocket', cost: 30 },
   '🔥': { name: 'Fire', cost: 20 },
@@ -36,11 +36,11 @@ const GIFT_CONFIG: Record<string, { name: string; cost: number }> = {
   '👑': { name: 'Crown', cost: 100 },
   '💰': { name: 'Money Bag', cost: 40 },
   '🎯': { name: 'Target', cost: 10 },
-  '🌟': { name: 'Glowing Star', cost: 25 },
+  '🌟': { name: 'Glowing Star', cost: 25 }
 };
 
 const liveRooms: LiveRoom[] = [
-{ id: 'lr1', host: 'Nova_Star', avatar: 'NS', title: '🎵 Live DJ Set — Future Beats Vol.3', category: 'Music', viewers: 12840, isLive: true, isGroup: false, thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_1318662b8-1764637600231.png", tags: ['EDM', 'Live', 'DJ'], duration: '1:24:33' },
+{ id: 'lr1', host: 'Nova_Star', avatar: 'NS', title: '🎵 Live DJ Set — Future Beats Vol.3', category: 'Music', viewers: 12840, isLive: true, isGroup: false, thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_12b7d5410-1767677437942.png", tags: ['EDM', 'Live', 'DJ'], duration: '1:24:33' },
 { id: 'lr2', host: 'TechTalk Group', avatar: 'TT', title: '🤖 AI Revolution — Group Discussion', category: 'Tech', viewers: 8320, isLive: true, isGroup: true, groupName: 'Tech Innovators', thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_198ad9e76-1766563899922.png", tags: ['AI', 'Tech', 'Group'], duration: '0:45:12' },
 { id: 'lr3', host: 'CryptoKing', avatar: 'CK', title: '💎 Diamond Hands — Crypto Analysis Live', category: 'Finance', viewers: 23100, isLive: true, isGroup: false, thumbnail: "https://images.unsplash.com/photo-1651044129930-e2aa0be74df2", tags: ['Crypto', 'Trading', 'Live'], duration: '2:10:05' },
 { id: 'lr4', host: 'ArtCollective', avatar: 'AC', title: '🎨 Digital Art Creation — Watch & Learn', category: 'Art', viewers: 4560, isLive: true, isGroup: true, groupName: 'Digital Artists', thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_11502d10b-1767436448705.png", tags: ['Art', 'Design', 'Tutorial'], duration: '0:32:18' },
@@ -74,12 +74,12 @@ export default function LiveStreamScreen() {
 
   useEffect(() => {
     if (!user) return;
-    supabase
-      .from('user_points')
-      .select('balance')
-      .eq('user_id', user.id)
-      .single()
-      .then(({ data }) => { if (data) setUserPoints(data.balance); });
+    supabase.
+    from('user_points').
+    select('balance').
+    eq('user_id', user.id).
+    single().
+    then(({ data }) => {if (data) setUserPoints(data.balance);});
   }, [user]);
 
   useEffect(() => {
@@ -111,7 +111,7 @@ export default function LiveStreamScreen() {
   };
 
   const sendGift = async (gift: string) => {
-    if (!user) { toast.error('Sign in to send gifts'); return; }
+    if (!user) {toast.error('Sign in to send gifts');return;}
     const config = GIFT_CONFIG[gift];
     if (!config) return;
 
@@ -124,7 +124,7 @@ export default function LiveStreamScreen() {
     // Optimistic UI update
     setChatMessages((prev) => [...prev, { id: Date.now(), user: 'You', text: `Sent a ${config.name} gift ${gift} (${config.cost} pts)`, color: '#fbbf24', gift }]);
     setShowGifts(false);
-    setUserPoints(prev => prev - config.cost);
+    setUserPoints((prev) => prev - config.cost);
 
     try {
       // Spend points from sender
@@ -133,12 +133,12 @@ export default function LiveStreamScreen() {
         p_amount: config.cost,
         p_type: 'gift_sent',
         p_reason: `Sent ${config.name} gift in live stream`,
-        p_reference_id: selectedRoom?.id || null,
+        p_reference_id: selectedRoom?.id || null
       });
 
       if (!spent) {
         toast.error('Insufficient points');
-        setUserPoints(prev => prev + config.cost);
+        setUserPoints((prev) => prev + config.cost);
         return;
       }
 
@@ -149,13 +149,13 @@ export default function LiveStreamScreen() {
         stream_id: selectedRoom?.id,
         gift_emoji: gift,
         gift_name: config.name,
-        points_cost: config.cost,
+        points_cost: config.cost
       });
 
       toast.success(`${config.name} ${gift} sent! (-${config.cost} pts)`);
     } catch {
       toast.error('Failed to send gift');
-      setUserPoints(prev => prev + config.cost);
+      setUserPoints((prev) => prev + config.cost);
     }
   };
 
@@ -381,11 +381,11 @@ export default function LiveStreamScreen() {
             <Icon name="ChatBubbleLeftRightIcon" size={15} className="text-cyan-glow" />
             Live Chat
           </span>
-          {user && (
-            <span className="text-xs font-600 px-2 py-1 rounded-lg" style={{ background: 'rgba(0,210,255,0.1)', color: '#6ee7f7' }}>
+          {user &&
+          <span className="text-xs font-600 px-2 py-1 rounded-lg" style={{ background: 'rgba(0,210,255,0.1)', color: '#6ee7f7' }}>
               💎 {userPoints} pts
             </span>
-          )}
+          }
         </div>
 
         {/* Messages */}
@@ -418,8 +418,8 @@ export default function LiveStreamScreen() {
                 style={{ background: 'rgba(255,255,255,0.05)' }}>
                   <span className="text-xl">{g}</span>
                   <span className="text-xs text-slate-500">{cfg.cost}pts</span>
-                </button>
-              );
+                </button>);
+
             })}
           </div>
         </div>
