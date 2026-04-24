@@ -54,7 +54,7 @@ function VideoSkeleton() {
 }
 
 export default function ShortVideosScreen() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [activeVideo, setActiveVideo] = useState(0);
   const [liked, setLiked] = useState<Set<string>>(new Set());
@@ -74,7 +74,11 @@ export default function ShortVideosScreen() {
     setLoading(true);
     setError(null);
     try {
-      const data = await videoService.getPersonalizedFeed(user?.id ?? null, 20);
+      const timeoutPromise = new Promise<VideoItem[]>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 10000)
+      );
+      const fetchPromise = videoService.getPersonalizedFeed(user?.id ?? null, 20);
+      const data = await Promise.race([fetchPromise, timeoutPromise]);
       setVideos(data);
       if (data.length > 0 && user) {
         const ids = data.map((v: any) => v.id);
@@ -89,8 +93,9 @@ export default function ShortVideosScreen() {
   }, [user]);
 
   useEffect(() => {
+    if (authLoading) return;
     loadVideos();
-  }, [loadVideos]);
+  }, [loadVideos, authLoading]);
 
   useEffect(() => {
     if (videos.length === 0) return;
