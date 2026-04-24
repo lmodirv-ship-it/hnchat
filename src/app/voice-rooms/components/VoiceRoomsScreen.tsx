@@ -1,9 +1,11 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Room {
-  id: number;
+  id: string;
   name: string;
   topic: string;
   speakers: string[];
@@ -14,34 +16,142 @@ interface Room {
 }
 
 interface Contact {
-  id: number;
+  id: string;
   name: string;
   avatar: string;
   status: 'online' | 'busy' | 'offline';
   lastSeen?: string;
 }
 
-const rooms: Room[] = [
-  { id: 1, name: '💎 Diamond Lounge', topic: 'Future of AI & Super Apps', speakers: ['NS', 'ZF', 'KN'], listeners: 1247, live: true, gradient: 'from-cyan-500/20 to-violet-500/20', category: 'Tech' },
-  { id: 2, name: '🎵 Music Vibes', topic: 'Lo-fi beats & chill conversations', speakers: ['LP', 'OB'], listeners: 892, live: true, gradient: 'from-pink-500/20 to-rose-500/20', category: 'Music' },
-  { id: 3, name: '🚀 Startup Founders', topic: 'Scaling from 0 to 1M users', speakers: ['AM', 'RK', 'SL', 'JD'], listeners: 2341, live: true, gradient: 'from-emerald-500/20 to-teal-500/20', category: 'Business' },
-  { id: 4, name: '🎮 Gaming Arena', topic: 'Pro tips & tournament prep', speakers: ['GX', 'NV'], listeners: 567, live: false, gradient: 'from-orange-500/20 to-amber-500/20', category: 'Gaming' },
-  { id: 5, name: '🌍 World News', topic: 'Breaking: Tech giants merge', speakers: ['WN', 'TK', 'PL'], listeners: 4892, live: true, gradient: 'from-blue-500/20 to-indigo-500/20', category: 'News' },
-];
-
-const contacts: Contact[] = [
-  { id: 1, name: 'Nova Stellar', avatar: 'NS', status: 'online' },
-  { id: 2, name: 'Zara Flux', avatar: 'ZF', status: 'busy', lastSeen: 'In a call' },
-  { id: 3, name: 'Kai Nexus', avatar: 'KN', status: 'online' },
-  { id: 4, name: 'Luna Prism', avatar: 'LP', status: 'offline', lastSeen: '2h ago' },
-  { id: 5, name: 'Orion Byte', avatar: 'OB', status: 'online' },
-];
-
 export default function VoiceRoomsScreen() {
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [activeTab, setActiveTab] = useState<'rooms' | 'calls'>('rooms');
   const [muted, setMuted] = useState(false);
   const [inRoom, setInRoom] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    fetchRooms();
+    fetchContacts();
+  }, []);
+
+  const fetchRooms = async () => {
+    const supabase = createClient();
+    try {
+      const { data, error } = await supabase
+        .from('voice_rooms')
+        .select('*, voice_room_speakers(user_id, user_profiles(full_name))')
+        .order('listener_count', { ascending: false });
+
+      if (error) { console.log('Rooms fetch error:', error.message); return; }
+
+      const mapped: Room[] = (data || []).map(r => ({
+        id: r.id,
+        name: r.name,
+        topic: r.topic,
+        speakers: (r.voice_room_speakers || []).map((s: any) =>
+          s.user_profiles?.full_name?.slice(0, 2).toUpperCase() || 'US'
+        ),
+        listeners: r.listener_count,
+        live: r.is_live,
+        gradient: r.gradient,
+        category: r.category,
+      }));
+      setRooms(mapped);
+    } catch (e) {
+      console.log('Rooms fetch failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchContacts = async () => {
+    const supabase = createClient();
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('id, full_name, username')
+        .limit(10);
+
+      if (error) { console.log('Contacts fetch error:', error.message); return; }
+
+      const mapped: Contact[] = (data || []).map((u: any) => ({
+        id: u.id,
+        name: u.full_name || u.username || 'User',
+        avatar: (u.full_name || u.username || 'US').slice(0, 2).toUpperCase(),
+        status: 'online' as const,
+      }));
+      setContacts(mapped);
+    } catch (e) {
+      console.log('Contacts fetch failed');
+    }
+  };
+
+  const handleCreateRoom = async () => {
+    if (!user) return;
+    setCreating(true);
+    const supabase = createClient();
+    try {
+      const { data, error } = await supabase
+        .from('voice_rooms')
+        .insert({
+          name: '🎙️ New Room',
+          topic: 'Open discussion',
+          category: 'General',
+          gradient: 'from-cyan-500/20 to-violet-500/20',
+          is_live: true,
+          listener_count: 1,
+          created_by: user.id,
+        })
+        .select()
+        .single();
+
+      if (error) { console.log('Create room error:', error.message); return; }
+      await fetchRooms();
+      if (data) {
+        setActiveRoom({
+          id: data.id, name: data.name, topic: data.topic,
+          speakers: [], listeners: 1, live: true,
+          gradient: data.gradient, category: data.category,
+        });
+      }
+    } catch (e) {
+      console.log('Create room failed');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleJoinRoom = async (room: Room) => {
+    if (!user) return;
+    const supabase = createClient();
+    try {
+      await supabase.from('voice_room_speakers').upsert(
+        { room_id: room.id, user_id: user.id, is_muted: false },
+        { onConflict: 'room_id,user_id' }
+      );
+      await supabase.from('voice_rooms').update({ listener_count: room.listeners + 1 }).eq('id', room.id);
+      setInRoom(true);
+    } catch (e) {
+      console.log('Join room failed');
+    }
+  };
+
+  const handleLeaveRoom = async () => {
+    if (!user || !activeRoom) return;
+    const supabase = createClient();
+    try {
+      await supabase.from('voice_room_speakers').delete().eq('room_id', activeRoom.id).eq('user_id', user.id);
+      await supabase.from('voice_rooms').update({ listener_count: Math.max(0, activeRoom.listeners - 1) }).eq('id', activeRoom.id);
+      setInRoom(false);
+    } catch (e) {
+      console.log('Leave room failed');
+    }
+  };
 
   const statusColor = (s: Contact['status']) => s === 'online' ? '#22c55e' : s === 'busy' ? '#f59e0b' : '#64748b';
 
@@ -67,7 +177,13 @@ export default function VoiceRoomsScreen() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {activeTab === 'rooms' ? rooms.map(room => (
+          {loading ? (
+            <div className="space-y-2">
+              {[1,2,3].map(i => (
+                <div key={i} className="h-20 rounded-2xl animate-pulse" style={{ background: 'rgba(255,255,255,0.04)' }} />
+              ))}
+            </div>
+          ) : activeTab === 'rooms' ? rooms.map(room => (
             <button key={room.id} onClick={() => { setActiveRoom(room); setInRoom(false); }}
               className={`w-full p-3 rounded-2xl transition-all duration-200 text-left ${activeRoom?.id === room.id ? 'glass-card' : 'hover:bg-white/04'}`}
               style={{ border: activeRoom?.id === room.id ? '1px solid rgba(0,210,255,0.2)' : '1px solid rgba(255,255,255,0.04)' }}>
@@ -83,8 +199,8 @@ export default function VoiceRoomsScreen() {
               <p className="text-slate-500 text-xs mb-2 truncate">{room.topic}</p>
               <div className="flex items-center justify-between">
                 <div className="flex -space-x-1">
-                  {room.speakers.slice(0, 3).map(s => (
-                    <div key={s} className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-700 border border-ice-black"
+                  {room.speakers.slice(0, 3).map((s, idx) => (
+                    <div key={idx} className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-700 border border-ice-black"
                       style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)' }}>
                       {s[0]}
                     </div>
@@ -126,9 +242,10 @@ export default function VoiceRoomsScreen() {
 
         {/* Create Room */}
         <div className="p-3 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-          <button className="btn-primary w-full text-sm py-2.5 flex items-center justify-center gap-2">
+          <button onClick={handleCreateRoom} disabled={creating || !user}
+            className="btn-primary w-full text-sm py-2.5 flex items-center justify-center gap-2 disabled:opacity-50">
             <Icon name="MicrophoneIcon" size={16} />
-            Create Room
+            {creating ? 'Creating...' : 'Create Room'}
           </button>
         </div>
       </div>
@@ -160,7 +277,7 @@ export default function VoiceRoomsScreen() {
                 </p>
                 <div className="grid grid-cols-4 gap-4 mb-6">
                   {activeRoom.speakers.map((s, i) => (
-                    <div key={s} className="flex flex-col items-center gap-2">
+                    <div key={i} className="flex flex-col items-center gap-2">
                       <div className="relative">
                         <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-700"
                           style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', boxShadow: i === 0 ? '0 0 0 3px rgba(0,210,255,0.4), 0 0 20px rgba(0,210,255,0.3)' : 'none' }}>
@@ -181,12 +298,12 @@ export default function VoiceRoomsScreen() {
                 {/* Audio visualizer */}
                 <div className="flex items-end justify-center gap-1 h-12 mb-4">
                   {Array.from({ length: 20 }).map((_, i) => (
-                    <div key={i} className="w-1.5 rounded-full transition-all duration-150"
+                    <div key={i} className="w-1.5 rounded-full"
                       style={{
-                        height: `${Math.random() * 100}%`,
-                        background: `linear-gradient(to top, #00d2ff, #9b59ff)`,
-                        opacity: 0.6 + Math.random() * 0.4,
-                        animation: `pulse-live ${0.5 + Math.random() * 1}s infinite alternate`,
+                        height: `${30 + (i % 5) * 15}%`,
+                        background: 'linear-gradient(to top, #00d2ff, #9b59ff)',
+                        opacity: 0.7,
+                        animation: `pulse-live ${0.5 + (i % 3) * 0.3}s infinite alternate`,
                       }} />
                   ))}
                 </div>
@@ -202,9 +319,9 @@ export default function VoiceRoomsScreen() {
                     style={muted
                       ? { background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.4)' }
                       : { background: 'rgba(0,210,255,0.1)', border: '1px solid rgba(0,210,255,0.3)' }}>
-                    <Icon name={muted ? 'MicrophoneIcon' : 'MicrophoneIcon'} size={22} style={{ color: muted ? '#ef4444' : '#00d2ff' }} />
+                    <Icon name="MicrophoneIcon" size={22} style={{ color: muted ? '#ef4444' : '#00d2ff' }} />
                   </button>
-                  <button onClick={() => setInRoom(false)}
+                  <button onClick={handleLeaveRoom}
                     className="w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-200 hover:scale-105"
                     style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 0 20px rgba(239,68,68,0.4)' }}>
                     <Icon name="PhoneXMarkIcon" size={26} className="text-white" />
@@ -216,7 +333,7 @@ export default function VoiceRoomsScreen() {
                 </div>
               ) : (
                 <div className="flex justify-center">
-                  <button onClick={() => setInRoom(true)} className="btn-primary flex items-center gap-2 px-8 py-3">
+                  <button onClick={() => handleJoinRoom(activeRoom)} className="btn-primary flex items-center gap-2 px-8 py-3">
                     <Icon name="MicrophoneIcon" size={18} />
                     Join Room
                   </button>

@@ -6,10 +6,15 @@ import { PushNotificationProvider } from '@/contexts/PushNotificationContext';
 import { PushStrategyProvider } from '@/contexts/PushStrategyContext';
 import { Suspense } from 'react';
 import GoogleAnalytics from '@/components/GoogleAnalytics';
+import AdSenseScript from '@/components/AdSenseScript';
+import { organizationSchema, webApplicationSchema, faqSchema, softwareAppSchema } from '@/components/SchemaOrg';
+import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#00d2ff',
 };
 
 export const metadata: Metadata = {
@@ -23,6 +28,7 @@ export const metadata: Metadata = {
     'hnChat', 'super app', 'social media', 'short videos', 'live streaming',
     'AI assistant', 'marketplace', 'crypto trading', 'messaging', 'voice rooms',
     'games hub', 'social network', 'content creator', 'hnchat.net',
+    'تطبيق اجتماعي', 'شبكة اجتماعية', 'بث مباشر', 'تداول عملات رقمية',
   ],
   authors: [{ name: 'hnChat Team', url: 'https://hnchat.net' }],
   creator: 'hnChat',
@@ -44,6 +50,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
+    alternateLocale: ['ar_MA', 'ar_SA', 'fr_FR'],
     url: 'https://hnchat.net',
     siteName: 'hnChat',
     title: 'hnChat — Your World, One App',
@@ -73,6 +80,10 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   alternates: {
     canonical: 'https://hnchat.net',
+    languages: {
+      'en': 'https://hnchat.net',
+      'ar': 'https://hnchat.net',
+    },
   },
   verification: {
     google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || '',
@@ -83,35 +94,36 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="ar" dir="ltr">
       <head>
+        {/* Primary structured data: WebApplication */}
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              '@context': 'https://schema.org',
-              '@type': 'WebApplication',
-              name: 'hnChat',
-              url: 'https://hnchat.net',
-              description: 'The ultimate super app combining social networking, short video, live streaming, AI assistant, marketplace, and more.',
-              applicationCategory: 'SocialNetworkingApplication',
-              operatingSystem: 'Web',
-              offers: {
-                '@type': 'Offer',
-                price: '0',
-                priceCurrency: 'USD',
-              },
-              author: {
-                '@type': 'Organization',
-                name: 'hnChat',
-                url: 'https://hnchat.net',
-              },
-              sameAs: [
-                'https://hnchat.net',
-              ],
-            }),
-          }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(webApplicationSchema) }}
         />
+        {/* Organization schema for brand authority */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
+        />
+        {/* SoftwareApplication with ratings for rich snippets */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareAppSchema) }}
+        />
+        {/* FAQ schema for AEO — answer engine optimization */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
+        />
+        {/* AdSense */}
+        <AdSenseScript />
+        {/* PWA meta tags */}
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="hnChat" />
+        <link rel="apple-touch-icon" href="/assets/images/app_logo.png" />
 
         <script type="module" async src="https://static.rocket.new/rocket-web.js?_cfg=https%3A%2F%2Fhnchat7959back.builtwithrocket.new&_be=https%3A%2F%2Fappanalytics.rocket.new&_v=0.1.18" />
         <script type="module" defer src="https://static.rocket.new/rocket-shot.js?v=0.0.2" /></head>
@@ -123,10 +135,11 @@ export default function RootLayout({
           <PushNotificationProvider>
             <PushStrategyProvider>
               {children}
+              <PWAInstallPrompt />
             </PushStrategyProvider>
           </PushNotificationProvider>
         </AuthProvider>
-</body>
+      </body>
     </html>
   );
 }

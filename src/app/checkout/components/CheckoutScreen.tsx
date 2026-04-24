@@ -1,9 +1,11 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Icon from '@/components/ui/AppIcon';
 import AppImage from '@/components/ui/AppImage';
 import Link from 'next/link';
 import { toast, Toaster } from 'sonner';
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface CheckoutItem {
   id: string;
@@ -37,26 +39,49 @@ const MOCK_ITEMS: CheckoutItem[] = [
 ];
 
 const PAYMENT_METHODS = [
-  { id: 'stripe', label: 'Credit / Debit Card', icon: 'CreditCardIcon', badge: 'Stripe', badgeColor: '#635bff', desc: 'Visa, Mastercard, Amex' },
-  { id: 'paddle', label: 'Paddle Checkout', icon: 'ShieldCheckIcon', badge: 'Paddle', badgeColor: '#00b4d8', desc: 'Global payments + tax handled' },
-  { id: 'paypal', label: 'PayPal', icon: 'BanknotesIcon', badge: 'PayPal', badgeColor: '#003087', desc: 'Pay with your PayPal balance' },
+  { id: 'bank_transfer', label: 'تحويل بنكي', icon: 'BuildingLibraryIcon', badge: 'Bank', badgeColor: '#34d399', desc: 'MAD · درهم مغربي' },
+  { id: 'paypal', label: 'PayPal', icon: 'BanknotesIcon', badge: 'PayPal', badgeColor: '#0070f3', desc: 'USD · دولار أمريكي' },
 ];
 
-type Step = 'cart' | 'shipping' | 'payment' | 'confirm';
+type Step = 'cart' | 'shipping' | 'payment' | 'bank_details' | 'upload' | 'confirm';
+
+interface BankDetails {
+  account_holder: string;
+  bank_name: string;
+  account_number: string;
+  rib?: string;
+  iban?: string;
+  swift_code?: string;
+  instructions?: string;
+}
 
 export default function CheckoutScreen() {
+  const { user } = useAuth();
+  const supabase = createClient();
   const [step, setStep] = useState<Step>('cart');
   const [items, setItems] = useState<CheckoutItem[]>(MOCK_ITEMS);
-  const [selectedPayment, setSelectedPayment] = useState('stripe');
+  const [selectedPayment, setSelectedPayment] = useState('bank_transfer');
   const [processing, setProcessing] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', address: '', city: '', country: 'MA', zip: '' });
+  const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
+  const [copied, setCopied] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [transferRef, setTransferRef] = useState('');
+  const [orderId, setOrderId] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
   const discount = promoApplied ? subtotal * 0.1 : 0;
   const shipping = 4.99;
   const total = subtotal - discount + shipping;
+  const totalMAD = (total * 10).toFixed(2); // approx conversion
+
+  useEffect(() => {
+    supabase.from('bank_transfer_details').select('*').eq('is_active', true).limit(1).single()
+      .then(({ data }) => { if (data) setBankDetails(data); });
+  }, []);
 
   const updateQty = (id: string, qty: number) => {
     if (qty <= 0) { setItems((prev) => prev.filter((i) => i.id !== id)); return; }
@@ -72,16 +97,108 @@ export default function CheckoutScreen() {
     }
   };
 
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(''), 2000);
+  };
+
   const handlePlaceOrder = async () => {
     setProcessing(true);
-    await new Promise((r) => setTimeout(r, 2000));
-    // Payment provider integration point:
-    // - Stripe: POST /api/checkout/stripe → create PaymentIntent → redirect to Stripe Checkout
-    // - Paddle: window.Paddle.Checkout.open({ product: ..., email: form.email })
-    // - PayPal: POST /api/checkout/paypal → create order → redirect to PayPal approval URL
-    toast.success('Order placed! Redirecting to payment... 🚀');
-    setProcessing(false);
-    setStep('confirm');
+    try {
+      // Create order record in Supabase
+      const { data: order, error } = await supabase.from('orders').insert({
+        user_id: user?.id || null,
+        items: items,
+        subtotal,
+        discount,
+        shipping,
+        total,
+        payment_method: selectedPayment,
+        shipping_address: form,
+        status: 'pending_payment',
+      }).select().single();
+
+      if (error) throw error;
+      setOrderId(order?.id || `ORD-${Date.now()}`);
+
+      if (selectedPayment === 'bank_transfer') {
+        setStep('bank_details');
+      } else {
+        // PayPal instructions
+        setStep('bank_details');
+      }
+    } catch {
+      // Fallback: still show bank details even without DB
+      setOrderId(`ORD-${Date.now()}`);
+      setStep('bank_details');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleUploadReceipt = async () => {
+    if (!receiptFile) return;
+    setProcessing(true);
+    try {
+      const ext = receiptFile.name.split('.').pop();
+      const filename = `orders/${orderId}_${Date.now()}.${ext}`;
+      const arrayBuffer = await receiptFile.arrayBuffer();
+      const buffer = new Uint8Array(arrayBuffer);
+
+      const { error: uploadError } = await supabase.storage
+        .from('payment-receipts')
+        .upload(filename, buffer, { contentType: receiptFile.type, upsert: true });
+
+      if (!uploadError) {
+        await supabase.from('payment_receipts').insert({
+          user_id: user?.id || null,
+          receipt_url: filename,
+          receipt_filename: receiptFile.name,
+          transfer_reference: transferRef || null,
+          status: 'pending_verification',
+          notes: `Order: ${orderId}`,
+        });
+        await supabase.from('orders').update({ status: 'pending_verification' }).eq('id', orderId);
+      }
+
+      // 🔔 Brevo: trigger purchase confirmation email
+      if (user?.email) {
+        fetch('/api/email/purchase-confirmation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: user.email,
+            name: user.user_metadata?.full_name || user.email.split('@')[0],
+            orderId,
+            items: items.map((i) => ({ name: i.name, price: i.price, quantity: i.quantity })),
+            total,
+          }),
+        }).catch(() => {});
+      }
+
+      toast.success('Receipt uploaded! We\'ll verify within 24 hours.');
+      setStep('confirm');
+    } catch {
+      // 🔔 Brevo: trigger purchase confirmation email even on fallback path
+      if (user?.email) {
+        fetch('/api/email/purchase-confirmation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: user.email,
+            name: user.user_metadata?.full_name || user.email.split('@')[0],
+            orderId,
+            items: items.map((i) => ({ name: i.name, price: i.price, quantity: i.quantity })),
+            total,
+          }),
+        }).catch(() => {});
+      }
+      toast.success('Order placed! Please send your receipt to payments@hnchat.net');
+      setStep('confirm');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const STEPS: { id: Step; label: string }[] = [
@@ -90,7 +207,8 @@ export default function CheckoutScreen() {
     { id: 'payment', label: 'Payment' },
     { id: 'confirm', label: 'Confirm' },
   ];
-  const stepIdx = STEPS.findIndex((s) => s.id === step);
+  const displayStep = step === 'bank_details' || step === 'upload' ? 'payment' : step;
+  const stepIdx = STEPS.findIndex((s) => s.id === displayStep);
 
   return (
     <>
@@ -284,8 +402,7 @@ export default function CheckoutScreen() {
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5">{pm.desc}</p>
                       </div>
-                      <div
-                        className="w-4 h-4 rounded-full border-2 flex-shrink-0 transition-all duration-150"
+                      <div className="w-4 h-4 rounded-full border-2 flex-shrink-0 transition-all duration-150"
                         style={
                           selectedPayment === pm.id
                             ? { borderColor: '#00d2ff', background: '#00d2ff' }
@@ -296,16 +413,173 @@ export default function CheckoutScreen() {
                   ))}
                 </div>
 
-                {/* Coming soon notice */}
-                <div
-                  className="flex items-start gap-3 p-3 rounded-xl"
-                  style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)' }}
-                >
-                  <Icon name="InformationCircleIcon" size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-300/80 leading-relaxed">
-                    Payment processing will be activated soon. Your order details are saved and you&apos;ll be notified when payments go live.
-                  </p>
-                </div>
+                {/* Bank details */}
+                {selectedPayment === 'bank_transfer' && bankDetails ? (
+                  <div className="flex items-start gap-3 p-3 rounded-xl"
+                    style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.2)' }}>
+                    <Icon name="BuildingLibraryIcon" size={16} className="text-cyan-glow flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-xs text-amber-300/80 leading-relaxed">
+                        Transfer <strong className="text-white">{totalMAD} MAD</strong> to our bank account.
+                      </p>
+                      <div className="space-y-2 mt-2">
+                        {[
+                          { label: 'Account Holder', value: bankDetails.account_holder, key: 'holder' },
+                          { label: 'Bank', value: bankDetails.bank_name, key: 'bank' },
+                          { label: 'Account Number', value: bankDetails.account_number, key: 'account' },
+                          ...(bankDetails.rib ? [{ label: 'RIB', value: bankDetails.rib, key: 'rib' }] : []),
+                          ...(bankDetails.iban ? [{ label: 'IBAN', value: bankDetails.iban, key: 'iban' }] : []),
+                          ...(bankDetails.swift_code ? [{ label: 'SWIFT', value: bankDetails.swift_code, key: 'swift' }] : []),
+                        ].map(({ label, value, key }) => (
+                          <div key={key} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                            <span className="text-xs text-slate-500">{label}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-white font-mono">{value}</span>
+                              <button onClick={() => copyToClipboard(value, key)} className="p-1 rounded-lg hover:bg-white/10">
+                                <Icon name={copied === key ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={14}
+                                  style={{ color: copied === key ? '#34d399' : '#64748b' }} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="pt-2">
+                          <p className="text-xs font-semibold text-amber-400">Amount to transfer:</p>
+                          <p className="text-2xl font-bold text-white mt-1">{totalMAD} MAD</p>
+                          <p className="text-xs text-slate-500">(≈ ${total.toFixed(2)} USD)</p>
+                        </div>
+                        {bankDetails.instructions && (
+                          <p className="text-xs text-slate-400 pt-1">{bankDetails.instructions}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : selectedPayment === 'bank_transfer' ? (
+                  <div className="flex items-start gap-3 p-3 rounded-xl"
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <Icon name="BuildingLibraryIcon" size={16} className="text-cyan-glow flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-xs text-amber-300/80 leading-relaxed">
+                        Transfer <strong className="text-white">{totalMAD} MAD</strong> to our bank account.
+                      </p>
+                      <div className="space-y-2 mt-2">
+                        <div className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                          <span className="text-xs text-slate-500">Account Holder</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-white font-mono">{bankDetails?.account_holder}</span>
+                            <button onClick={() => copyToClipboard(bankDetails?.account_holder || '', 'holder')}
+                              className="p-1 rounded-lg hover:bg-white/10">
+                              <Icon name={copied === 'holder' ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={14}
+                                style={{ color: copied === 'holder' ? '#34d399' : '#64748b' }} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                          <span className="text-xs text-slate-500">Bank</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-white font-mono">{bankDetails?.bank_name}</span>
+                            <button onClick={() => copyToClipboard(bankDetails?.bank_name || '', 'bank')}
+                              className="p-1 rounded-lg hover:bg-white/10">
+                              <Icon name={copied === 'bank' ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={14}
+                                style={{ color: copied === 'bank' ? '#34d399' : '#64748b' }} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                          <span className="text-xs text-slate-500">Account Number</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-white font-mono">{bankDetails?.account_number}</span>
+                            <button onClick={() => copyToClipboard(bankDetails?.account_number || '', 'account')}
+                              className="p-1 rounded-lg hover:bg-white/10">
+                              <Icon name={copied === 'account' ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={14}
+                                style={{ color: copied === 'account' ? '#34d399' : '#64748b' }} />
+                            </button>
+                          </div>
+                        </div>
+                        {bankDetails.rib && (
+                          <div className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                            <span className="text-xs text-slate-500">RIB</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-white font-mono">{bankDetails.rib}</span>
+                              <button onClick={() => copyToClipboard(bankDetails.rib, 'rib')}
+                                className="p-1 rounded-lg hover:bg-white/10">
+                                <Icon name={copied === 'rib' ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={14}
+                                  style={{ color: copied === 'rib' ? '#34d399' : '#64748b' }} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {bankDetails.iban && (
+                          <div className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                            <span className="text-xs text-slate-500">IBAN</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-white font-mono">{bankDetails.iban}</span>
+                              <button onClick={() => copyToClipboard(bankDetails.iban, 'iban')}
+                                className="p-1 rounded-lg hover:bg-white/10">
+                                <Icon name={copied === 'iban' ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={14}
+                                  style={{ color: copied === 'iban' ? '#34d399' : '#64748b' }} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {bankDetails.swift_code && (
+                          <div className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                            <span className="text-xs text-slate-500">SWIFT</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-white font-mono">{bankDetails.swift_code}</span>
+                              <button onClick={() => copyToClipboard(bankDetails.swift_code, 'swift')}
+                                className="p-1 rounded-lg hover:bg-white/10">
+                                <Icon name={copied === 'swift' ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={14}
+                                  style={{ color: copied === 'swift' ? '#34d399' : '#64748b' }} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        <div className="pt-2">
+                          <p className="text-xs font-semibold text-amber-400">Amount to transfer:</p>
+                          <p className="text-2xl font-bold text-white mt-1">{totalMAD} MAD</p>
+                          <p className="text-xs text-slate-500">(≈ ${total.toFixed(2)} USD)</p>
+                        </div>
+                        {bankDetails.instructions && (
+                          <p className="text-xs text-slate-400 pt-1">{bankDetails.instructions}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-3 p-3 rounded-xl"
+                    style={{ background: 'rgba(0,48,135,0.1)', border: '1px solid rgba(0,112,243,0.3)' }}>
+                    <Icon name="BanknotesIcon" size={16} className="text-cyan-glow flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-xs text-amber-300/80 leading-relaxed">
+                        Send <strong className="text-white">${total.toFixed(2)}</strong> USD via PayPal.
+                      </p>
+                      <div className="space-y-2 mt-2">
+                        <div className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                          <span className="text-xs text-slate-500">Email</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-white font-mono">payments@hnchat.net</span>
+                            <button onClick={() => copyToClipboard('payments@hnchat.net', 'paypal')}
+                              className="p-1 rounded-lg hover:bg-white/10">
+                              <Icon name={copied === 'paypal' ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={14}
+                                style={{ color: copied === 'paypal' ? '#34d399' : '#64748b' }} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                          <span className="text-xs text-slate-500">Order ID</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-white font-mono">{orderId}</span>
+                            <button onClick={() => copyToClipboard(orderId, 'order')}
+                              className="p-1 rounded-lg hover:bg-white/10">
+                              <Icon name={copied === 'order' ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={14}
+                                style={{ color: copied === 'order' ? '#34d399' : '#64748b' }} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex gap-3">
                   <button onClick={() => setStep('shipping')} className="btn-glass flex-1 text-sm">Back</button>
@@ -328,26 +602,140 @@ export default function CheckoutScreen() {
               </div>
             )}
 
+            {/* Step: Bank Details */}
+            {step === 'bank_details' && (
+              <div className="glass-card p-5 space-y-4">
+                <h2 className="text-sm font-700 text-slate-300 flex items-center gap-2">
+                  <Icon name="BuildingLibraryIcon" size={16} className="text-cyan-glow" />
+                  {selectedPayment === 'paypal' ? 'PayPal Payment Instructions' : 'Bank Transfer Details'}
+                </h2>
+
+                {selectedPayment === 'bank_transfer' && bankDetails ? (
+                  <div className="rounded-2xl p-4 space-y-3"
+                    style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.2)' }}>
+                    {[
+                      { label: 'Account Holder', value: bankDetails.account_holder, key: 'holder' },
+                      { label: 'Bank', value: bankDetails.bank_name, key: 'bank' },
+                      { label: 'Account Number', value: bankDetails.account_number, key: 'account' },
+                      ...(bankDetails.rib ? [{ label: 'RIB', value: bankDetails.rib, key: 'rib' }] : []),
+                      ...(bankDetails.iban ? [{ label: 'IBAN', value: bankDetails.iban, key: 'iban' }] : []),
+                      ...(bankDetails.swift_code ? [{ label: 'SWIFT', value: bankDetails.swift_code, key: 'swift' }] : []),
+                    ].map(({ label, value, key }) => (
+                      <div key={key} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                        <span className="text-xs text-slate-500">{label}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-white font-mono">{value}</span>
+                          <button onClick={() => copyToClipboard(value, key)} className="p-1 rounded-lg hover:bg-white/10">
+                            <Icon name={copied === key ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={14}
+                              style={{ color: copied === key ? '#34d399' : '#64748b' }} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="pt-2">
+                      <p className="text-xs font-semibold text-amber-400">Amount to transfer:</p>
+                      <p className="text-2xl font-bold text-white mt-1">{totalMAD} MAD</p>
+                      <p className="text-xs text-slate-500">(≈ ${total.toFixed(2)} USD)</p>
+                    </div>
+                    {bankDetails.instructions && (
+                      <p className="text-xs text-slate-400 pt-1">{bankDetails.instructions}</p>
+                    )}
+                  </div>
+                ) : selectedPayment === 'bank_transfer' ? (
+                  <div className="rounded-xl p-4 text-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                    <p className="text-sm text-slate-400">Please transfer <strong className="text-white">{totalMAD} MAD</strong> to our bank account.</p>
+                    <p className="text-xs text-slate-500 mt-1">Contact us at <span className="text-cyan-400">payments@hnchat.net</span> for bank details.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl p-5 text-center space-y-3"
+                    style={{ background: 'rgba(0,48,135,0.1)', border: '1px solid rgba(0,112,243,0.3)' }}>
+                    <p className="text-white font-semibold">Send ${total.toFixed(2)} USD via PayPal</p>
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-blue-400 font-mono text-sm">payments@hnchat.net</span>
+                      <button onClick={() => copyToClipboard('payments@hnchat.net', 'paypal')} className="p-1 rounded-lg hover:bg-white/10">
+                        <Icon name={copied === 'paypal' ? 'CheckIcon' : 'ClipboardDocumentIcon'} size={14}
+                          style={{ color: copied === 'paypal' ? '#34d399' : '#64748b' }} />
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-500">Include your order ID in the note: <span className="font-mono text-slate-300">{orderId}</span></p>
+                  </div>
+                )}
+
+                <button onClick={() => setStep('upload')}
+                  className="btn-primary w-full flex items-center justify-center gap-2 text-sm">
+                  <Icon name="ArrowUpTrayIcon" size={16} />
+                  Upload Payment Receipt
+                </button>
+              </div>
+            )}
+
+            {/* Step: Upload Receipt */}
+            {step === 'upload' && (
+              <div className="glass-card p-5 space-y-4">
+                <h2 className="text-sm font-700 text-slate-300 flex items-center gap-2">
+                  <Icon name="ArrowUpTrayIcon" size={16} className="text-cyan-glow" />
+                  Upload Payment Receipt
+                </h2>
+                <div onClick={() => fileInputRef.current?.click()}
+                  className="rounded-2xl p-8 text-center cursor-pointer transition-all hover:border-slate-500"
+                  style={{
+                    border: `2px dashed ${receiptFile ? 'rgba(52,211,153,0.5)' : 'rgba(255,255,255,0.12)'}`,
+                    background: receiptFile ? 'rgba(52,211,153,0.05)' : 'rgba(255,255,255,0.02)',
+                  }}>
+                  <input ref={fileInputRef} type="file" className="hidden"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} />
+                  {receiptFile ? (
+                    <div className="space-y-2">
+                      <Icon name="DocumentCheckIcon" size={32} style={{ color: '#34d399' }} className="mx-auto" />
+                      <p className="text-sm text-white font-medium">{receiptFile.name}</p>
+                      <p className="text-xs text-slate-500">{(receiptFile.size / 1024).toFixed(0)} KB</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Icon name="ArrowUpTrayIcon" size={32} className="mx-auto text-slate-500" />
+                      <p className="text-sm text-slate-400">Click to upload receipt</p>
+                      <p className="text-xs text-slate-600">JPG, PNG, PDF — up to 5MB</p>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1.5">Transfer Reference (optional)</label>
+                  <input value={transferRef} onChange={(e) => setTransferRef(e.target.value)}
+                    placeholder="e.g. TRF-2024-XXXXX"
+                    className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1 focus:ring-slate-500"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }} />
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setStep('bank_details')} className="btn-glass flex-1 text-sm">Back</button>
+                  <button onClick={handleUploadReceipt} disabled={!receiptFile || processing}
+                    className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm disabled:opacity-40">
+                    {processing ? <Icon name="ArrowPathIcon" size={16} className="animate-spin" /> : 'Submit Receipt'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Step: Confirm */}
             {step === 'confirm' && (
               <div className="glass-card p-8 text-center space-y-4">
                 <div
                   className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto"
-                  style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', boxShadow: '0 0 32px rgba(0,210,255,0.4)' }}
-                >
+                  style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', boxShadow: '0 0 32px rgba(0,210,255,0.4)' }}>
                   <Icon name="CheckIcon" size={28} className="text-white" />
                 </div>
                 <h2 className="text-xl font-700 gradient-text">Order Confirmed!</h2>
                 <p className="text-sm text-slate-400 max-w-sm mx-auto">
-                  Your order has been placed successfully. You&apos;ll receive a confirmation email at <span className="text-slate-300 font-600">{form.email || 'your email'}</span>.
+                  Your order has been placed. We&apos;ll verify your payment within 24 hours and send a confirmation to{' '}
+                  <span className="text-slate-300 font-600">{form.email || 'your email'}</span>.
                 </p>
-                <div
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-600"
-                  style={{ background: 'rgba(0,210,255,0.08)', border: '1px solid rgba(0,210,255,0.15)', color: '#6ee7f7' }}
-                >
-                  <Icon name="ClockIcon" size={14} />
-                  Payment processing coming soon
-                </div>
+                {orderId && (
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-600"
+                    style={{ background: 'rgba(0,210,255,0.08)', border: '1px solid rgba(0,210,255,0.15)', color: '#6ee7f7' }}>
+                    <Icon name="ReceiptRefundIcon" size={14} />
+                    Order ID: {orderId}
+                  </div>
+                )}
                 <div className="flex gap-3 justify-center pt-2">
                   <Link href="/marketplace">
                     <button className="btn-glass text-sm px-6">Continue Shopping</button>

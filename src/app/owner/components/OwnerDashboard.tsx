@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
@@ -7,7 +7,6 @@ import Icon from '@/components/ui/AppIcon';
 import AppLogo from '@/components/ui/AppLogo';
 
 const OWNER_EMAIL = 'lmodirv@gmail.com';
-const OWNER_ACCESS_KEY = 'owner_access_v2';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface SiteStats {
@@ -66,9 +65,9 @@ const managementSections = [
     title: 'Core Management',
     items: [
       { label: 'Admin Dashboard', icon: 'ChartBarSquareIcon', href: '/admin', color: '#00d2ff', desc: 'Main control panel' },
-      { label: 'Manage Users', icon: 'UsersIcon', href: '/admin/users', color: '#a78bfa', desc: 'Ban, delete, promote' },
-      { label: 'Manage Posts', icon: 'DocumentTextIcon', href: '/admin/posts', color: '#34d399', desc: 'Moderate content' },
-      { label: 'Reports', icon: 'FlagIcon', href: '/admin/reports', color: '#f87171', desc: 'Review flagged content' },
+      { label: 'Manage Users', icon: 'UsersIcon', href: '/owner/users', color: '#a78bfa', desc: 'Ban, delete, promote' },
+      { label: 'Manage Content', icon: 'DocumentTextIcon', href: '/owner/content', color: '#34d399', desc: 'Moderate posts' },
+      { label: 'Reports', icon: 'FlagIcon', href: '/owner/reports', color: '#f87171', desc: 'Review flagged content' },
     ],
   },
   {
@@ -85,7 +84,7 @@ const managementSections = [
     items: [
       { label: 'Email Dashboard', icon: 'EnvelopeIcon', href: '/email-dashboard', color: '#60a5fa', desc: 'Email campaigns' },
       { label: 'Ads Manager', icon: 'MegaphoneIcon', href: '/ads-manager', color: '#e879f9', desc: 'Ad campaigns' },
-      { label: 'Ads & Promo', icon: 'SparklesIcon', href: '/ads-promo', color: '#fde68a', desc: 'Promotions' },
+      { label: 'Payments', icon: 'BanknotesIcon', href: '/owner/payments', color: '#fde68a', desc: 'Receipts & bank details' },
       { label: 'Marketplace', icon: 'ShoppingBagIcon', href: '/marketplace', color: '#6ee7b7', desc: 'Product listings' },
     ],
   },
@@ -95,7 +94,7 @@ const managementSections = [
       { label: 'Home Feed', icon: 'HomeIcon', href: '/home-feed', color: '#94a3b8', desc: 'Main social feed' },
       { label: 'Short Videos', icon: 'FilmIcon', href: '/short-videos', color: '#c084fc', desc: 'Video content' },
       { label: 'Voice Rooms', icon: 'MicrophoneIcon', href: '/voice-rooms', color: '#67e8f9', desc: 'Live audio' },
-      { label: 'AI Assistant', icon: 'CpuChipIcon', href: '/ai-assistant', color: '#86efac', desc: 'AI features' },
+      { label: 'Site Settings', icon: 'Cog6ToothIcon', href: '/owner/settings', color: '#86efac', desc: 'Platform configuration' },
     ],
   },
 ];
@@ -221,35 +220,53 @@ export default function OwnerDashboard() {
 
   // ── Auth check ──
   useEffect(() => {
-    checkOwnerAccess();
+    const timeoutId = setTimeout(() => {
+      // Global fallback: if auth check hangs beyond 6s, redirect to login
+      router.replace('/owner-login');
+    }, 6000);
+
+    const runCheck = async () => {
+      try {
+        // Use getUser() for a real server-validated session check
+        const userPromise = supabase.auth.getUser();
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error('auth timeout')), 4000)
+        );
+
+        const result = await Promise.race([userPromise, timeoutPromise]);
+
+        if (!result || !('data' in result) || result.data?.user?.email !== OWNER_EMAIL) {
+          clearTimeout(timeoutId);
+          router.replace('/owner-login');
+          return;
+        }
+
+        try {
+          await Promise.race([
+            fetch('/api/owner-setup', { method: 'POST' }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('setup timeout')), 3000))
+          ]);
+        } catch { /* ignore setup errors */ }
+
+        try {
+          await loadStats();
+        } catch { /* ignore stats errors, show dashboard anyway */ }
+      } catch (err) {
+        console.error('Owner access check failed:', err);
+        router.replace('/owner-login');
+      } finally {
+        clearTimeout(timeoutId);
+        setLoading(false);
+      }
+    };
+
+    runCheck();
+
+    return () => clearTimeout(timeoutId);
   }, []);
 
   const checkOwnerAccess = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const hasSessionAccess = session?.user?.email === OWNER_EMAIL;
-      let hasDirectAccess = false;
-      try {
-        hasDirectAccess = typeof window !== 'undefined' && localStorage.getItem(OWNER_ACCESS_KEY) === 'granted';
-      } catch { /* ignore */ }
-
-      if (!hasSessionAccess && !hasDirectAccess) {
-        router.replace('/owner-login');
-        return;
-      }
-
-      try {
-        await fetch('/api/owner-setup', { method: 'POST' });
-      } catch { /* ignore setup errors */ }
-
-      try {
-        await loadStats();
-      } catch { /* ignore stats errors, show dashboard anyway */ }
-    } catch (err) {
-      console.error('Owner access check failed:', err);
-    } finally {
-      setLoading(false);
-    }
+    // kept for compatibility but logic moved to useEffect above
   };
 
   // ── Owner API helper ──
@@ -507,7 +524,7 @@ export default function OwnerDashboard() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    try { localStorage.removeItem(OWNER_ACCESS_KEY); } catch { /* ignore */ }
+    try { localStorage.removeItem('owner_access'); } catch { /* ignore */ }
     router.push('/sign-up-login');
   };
 
@@ -746,7 +763,7 @@ export default function OwnerDashboard() {
                   onKeyDown={(e) => { if (e.key === 'Enter') { setUserPage(0); loadUsers(0, userSearch); } }}
                   placeholder="Search by name, username, email..."
                   className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1 focus:ring-amber-500 transition-all"
-                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
                 />
               </div>
               <button onClick={() => { setUserPage(0); loadUsers(0, userSearch); }}

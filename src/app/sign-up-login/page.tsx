@@ -2,6 +2,9 @@ import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import AuthScreen from './components/AuthScreen';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export const metadata: Metadata = {
   title: 'Sign Up or Log In — Join hnChat',
   description: 'Create your free hnChat account or sign in. Join millions of users on the ultimate super app for social networking, videos, AI, and more.',

@@ -88,6 +88,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         },
         { onConflict: 'id', ignoreDuplicates: true }
       );
+
+      // 🔔 Brevo: trigger welcome email on signup
+      fetch('/api/email/welcome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name: metadata?.fullName || email.split('@')[0] }),
+      }).catch(() => {});
     }
 
     return data;

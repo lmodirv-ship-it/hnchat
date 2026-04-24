@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
+import AdBanner from '@/components/AdBanner';
 
 const features = [
   {
@@ -70,9 +71,37 @@ const stats = [
   { value: '0', label: 'Limits' },
 ];
 
+const faqs = [
+  {
+    q: 'What is hnChat?',
+    a: 'hnChat is a super app that combines social networking, short videos, live streaming, AI assistant (GPT-4, Claude, Gemini), marketplace, crypto trading, voice rooms, and games — all in one platform.',
+  },
+  {
+    q: 'Is hnChat free?',
+    a: 'Yes! hnChat has a free plan with full access to core features. Premium plans unlock advanced AI, analytics, and creator tools.',
+  },
+  {
+    q: 'What AI models does hnChat support?',
+    a: 'hnChat AI Hub supports GPT-4, Claude, and Gemini — all accessible from one unified interface without switching apps.',
+  },
+  {
+    q: 'Can I sell products on hnChat?',
+    a: 'Absolutely. hnChat has a built-in marketplace where you can list, sell, and buy products directly within your social feed.',
+  },
+  {
+    q: 'Does hnChat support crypto trading?',
+    a: 'Yes, hnChat includes hnTrade — a crypto tracking and trading feature so you never have to leave the app.',
+  },
+  {
+    q: 'How do I earn money on hnChat?',
+    a: 'You can earn through the Invite & Earn referral program, selling on the marketplace, running ads, and creator monetization tools.',
+  },
+];
+
 export default function LandingScreen() {
   const [mounted, setMounted] = useState(false);
   const [scrollY, setScrollY] = useState(0);
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -123,7 +152,6 @@ export default function LandingScreen() {
           }}
         />
       </div>
-
       {/* Navbar */}
       <nav
         className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 lg:px-12 py-4 transition-all duration-300"
@@ -145,8 +173,8 @@ export default function LandingScreen() {
           </span>
         </div>
         <div className="hidden md:flex items-center gap-8">
-          {['Features', 'About', 'Community'].map(item => (
-            <a key={item} href={`#${item.toLowerCase()}`} className="text-sm text-slate-400 hover:text-slate-200 transition-colors font-500">
+          {['Features', 'FAQ', 'Community']?.map(item => (
+            <a key={item} href={`#${item?.toLowerCase()}`} className="text-sm text-slate-400 hover:text-slate-200 transition-colors font-500">
               {item}
             </a>
           ))}
@@ -159,7 +187,6 @@ export default function LandingScreen() {
           Join Now
         </Link>
       </nav>
-
       {/* Hero */}
       <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-24 pb-16 text-center">
         {/* Diamond badge */}
@@ -199,245 +226,172 @@ export default function LandingScreen() {
         <div className="flex flex-col sm:flex-row items-center gap-4 mb-16">
           <Link
             href="/sign-up-login"
-            className="px-8 py-4 rounded-2xl text-base font-700 text-ice-black transition-all duration-300 hover:scale-105 hover:shadow-glow-cyan"
-            style={{
-              background: 'linear-gradient(135deg, #00d2ff, #9b59ff)',
-              boxShadow: '0 0 32px rgba(0,210,255,0.3), 0 0 64px rgba(155,89,255,0.15)',
-            }}
+            className="px-8 py-4 rounded-2xl text-base font-700 text-white transition-all duration-200 hover:scale-105 hover:shadow-2xl"
+            style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', boxShadow: '0 0 32px rgba(0,210,255,0.3)' }}
           >
-            🚀 Join hnChat Free
+            Get Started Free
           </Link>
-          <Link
-            href="/home-feed"
-            className="px-8 py-4 rounded-2xl text-base font-600 text-slate-300 transition-all duration-200 hover:text-slate-100 hover:bg-white/06"
-            style={{ border: '1px solid rgba(255,255,255,0.1)' }}
+          <a
+            href="#features"
+            className="px-8 py-4 rounded-2xl text-base font-600 text-slate-300 transition-all duration-200 hover:text-white"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
           >
-            Explore the App →
-          </Link>
+            Explore Features
+          </a>
         </div>
 
-        {/* Stats row */}
-        <div className="flex items-center gap-8 sm:gap-16">
-          {[
-            { value: 'Early', label: 'Access Open' },
-            { value: '🔥', label: 'Growing Fast' },
-            { value: '100%', label: 'Free to Join' },
-          ].map(stat => (
-            <div key={stat.label} className="text-center">
-              <div
-                className="text-3xl sm:text-4xl font-800 mb-1"
-                style={{
-                  background: 'linear-gradient(135deg, #00d2ff, #9b59ff)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                }}
-              >
-                {stat.value}
-              </div>
-              <div className="text-xs text-slate-600 font-500 uppercase tracking-widest">{stat.label}</div>
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-8 max-w-lg">
+          {stats?.map((s) => (
+            <div key={s?.label} className="text-center">
+              <div className="text-2xl font-800 text-slate-100">{s?.value}</div>
+              <div className="text-xs text-slate-500 mt-1">{s?.label}</div>
             </div>
           ))}
         </div>
-
-        {/* Scroll indicator */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 animate-bounce">
-          <div className="text-xs text-slate-600">Scroll to explore</div>
-          <Icon name="ChevronDownIcon" size={16} className="text-slate-600" />
-        </div>
       </section>
-
-      {/* Features Bento Grid */}
+      {/* Ad Banner — between hero and features */}
+      <div className="max-w-4xl mx-auto px-6 mb-8">
+        <AdBanner adSlot="1234567890" adFormat="horizontal" className="rounded-xl" />
+      </div>
+      {/* Features */}
       <section id="features" className="relative px-6 lg:px-12 py-24 max-w-7xl mx-auto">
         <div className="text-center mb-16">
-          <div
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-6 text-sm font-600"
-            style={{ background: 'rgba(155,89,255,0.08)', border: '1px solid rgba(155,89,255,0.2)', color: '#9b59ff' }}
-          >
-            ✦ Everything in one place
-          </div>
-          <h2 className="text-4xl sm:text-5xl font-800 text-slate-100 mb-4">
-            Built different.
+          <h2 className="text-4xl lg:text-5xl font-800 text-slate-100 mb-4">
+            Everything in{' '}
+            <span style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              One Place
+            </span>
           </h2>
-          <p className="text-lg text-slate-500 max-w-xl mx-auto">
-            Not just another social app. hnChat is a complete digital ecosystem.
+          <p className="text-slate-400 text-lg max-w-xl mx-auto">
+            Stop juggling 10 apps. hnChat brings your entire digital life together.
           </p>
         </div>
 
-        {/* Asymmetric bento grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 auto-rows-[180px]">
-          {/* Large card - spans 2 cols, 2 rows */}
-          <div
-            className="col-span-2 row-span-2 rounded-3xl p-8 flex flex-col justify-end relative overflow-hidden group cursor-pointer transition-all duration-300 hover:scale-[1.02]"
-            style={{
-              background: 'linear-gradient(135deg, rgba(0,210,255,0.08) 0%, rgba(0,210,255,0.02) 100%)',
-              border: '1px solid rgba(0,210,255,0.15)',
-              boxShadow: '0 0 40px rgba(0,210,255,0.05)',
-            }}
-          >
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {features?.map((f) => (
             <div
-              className="absolute top-8 right-8 w-24 h-24 rounded-3xl flex items-center justify-center"
-              style={{ background: 'rgba(0,210,255,0.1)', border: '1px solid rgba(0,210,255,0.2)' }}
-            >
-              <Icon name="FilmIcon" size={48} style={{ color: '#00d2ff' }} />
-            </div>
-            <div
-              className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-              style={{ background: 'radial-gradient(circle at 70% 30%, rgba(0,210,255,0.06) 0%, transparent 60%)' }}
-            />
-            <span
-              className="text-xs font-700 px-3 py-1 rounded-full mb-4 w-fit"
-              style={{ background: 'rgba(0,210,255,0.15)', color: '#00d2ff' }}
-            >
-              ALGORITHM-POWERED
-            </span>
-            <h3 className="text-2xl font-800 text-slate-100 mb-2">Short Videos</h3>
-            <p className="text-slate-400 text-sm leading-relaxed max-w-xs">
-              TikTok-style feed with personalized algorithm — the more you watch, the smarter it gets.
-            </p>
-          </div>
-
-          {/* Small cards */}
-          {[
-            { icon: 'ChatBubbleLeftRightIcon', title: 'Real-time Chat', color: '#9b59ff', span: '' },
-            { icon: 'SparklesIcon', title: 'hn AI Hub', color: '#e879f9', span: '' },
-            { icon: 'SignalIcon', title: 'Live Streaming', color: '#00d2ff', span: '' },
-            { icon: 'MicrophoneIcon', title: 'Voice Rooms', color: '#9b59ff', span: '' },
-          ].map(card => (
-            <div
-              key={card.title}
-              className="rounded-3xl p-6 flex flex-col justify-between relative overflow-hidden group cursor-pointer transition-all duration-300 hover:scale-[1.03]"
+              key={f?.title}
+              className="p-5 rounded-2xl transition-all duration-200 hover:scale-105 cursor-pointer"
               style={{
-                background: `linear-gradient(135deg, ${card.color}08 0%, ${card.color}02 100%)`,
-                border: `1px solid ${card.color}15`,
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                backdropFilter: 'blur(12px)',
               }}
             >
               <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ background: `${card.color}15`, border: `1px solid ${card.color}25` }}
+                className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
+                style={{ background: `${f?.color}18`, border: `1px solid ${f?.color}30` }}
               >
-                <Icon name={card.icon as any} size={20} style={{ color: card.color }} />
+                <Icon name={f?.icon} size={20} style={{ color: f?.color }} />
               </div>
-              <h3 className="text-sm font-700 text-slate-200">{card.title}</h3>
+              <h3 className="font-700 text-slate-200 text-sm mb-1">{f?.title}</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">{f?.desc}</p>
             </div>
           ))}
-
-          {/* Medium card - spans 2 cols */}
-          <div
-            className="col-span-2 rounded-3xl p-6 flex items-center gap-6 relative overflow-hidden group cursor-pointer transition-all duration-300 hover:scale-[1.02]"
-            style={{
-              background: 'linear-gradient(135deg, rgba(155,89,255,0.08) 0%, rgba(232,121,249,0.04) 100%)',
-              border: '1px solid rgba(155,89,255,0.15)',
-            }}
-          >
-            <div
-              className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0"
-              style={{ background: 'rgba(155,89,255,0.15)', border: '1px solid rgba(155,89,255,0.25)' }}
-            >
-              <Icon name="ShoppingBagIcon" size={32} style={{ color: '#9b59ff' }} />
-            </div>
-            <div>
-              <span
-                className="text-xs font-700 px-2 py-1 rounded-full mb-2 inline-block"
-                style={{ background: 'rgba(155,89,255,0.15)', color: '#9b59ff' }}
-              >
-                MARKETPLACE
-              </span>
-              <h3 className="text-lg font-800 text-slate-100">Buy. Sell. Connect.</h3>
-              <p className="text-sm text-slate-500">Commerce meets community — shop without leaving your feed.</p>
-            </div>
-          </div>
-
-          {/* Crypto card - spans 2 cols */}
-          <div
-            className="col-span-2 rounded-3xl p-6 flex items-center gap-6 relative overflow-hidden group cursor-pointer transition-all duration-300 hover:scale-[1.02]"
-            style={{
-              background: 'linear-gradient(135deg, rgba(0,210,255,0.06) 0%, rgba(155,89,255,0.06) 100%)',
-              border: '1px solid rgba(0,210,255,0.1)',
-            }}
-          >
-            <div
-              className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0"
-              style={{ background: 'rgba(0,210,255,0.1)', border: '1px solid rgba(0,210,255,0.2)' }}
-            >
-              <Icon name="CurrencyDollarIcon" size={32} style={{ color: '#00d2ff' }} />
-            </div>
-            <div>
-              <span
-                className="text-xs font-700 px-2 py-1 rounded-full mb-2 inline-block"
-                style={{ background: 'rgba(0,210,255,0.15)', color: '#00d2ff' }}
-              >
-                CRYPTO
-              </span>
-              <h3 className="text-lg font-800 text-slate-100">hnTrade Crypto</h3>
-              <p className="text-sm text-slate-500">Track and trade crypto without leaving the app.</p>
-            </div>
-          </div>
         </div>
       </section>
-
-      {/* CTA Section */}
-      <section id="about" className="relative px-6 lg:px-12 py-24">
+      {/* Social Proof / Trust Section */}
+      <section className="px-6 lg:px-12 py-16 max-w-4xl mx-auto text-center">
         <div
-          className="max-w-4xl mx-auto rounded-3xl p-12 text-center relative overflow-hidden"
-          style={{
-            background: 'linear-gradient(135deg, rgba(0,210,255,0.08) 0%, rgba(155,89,255,0.08) 50%, rgba(232,121,249,0.06) 100%)',
-            border: '1px solid rgba(0,210,255,0.15)',
-            boxShadow: '0 0 80px rgba(0,210,255,0.08), 0 0 160px rgba(155,89,255,0.05)',
-          }}
+          className="rounded-3xl p-10"
+          style={{ background: 'rgba(0,210,255,0.04)', border: '1px solid rgba(0,210,255,0.1)' }}
         >
-          {/* Diamond decoration */}
-          <div
-            className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rotate-45"
-            style={{
-              background: 'linear-gradient(135deg, #00d2ff, #9b59ff)',
-              boxShadow: '0 0 40px rgba(0,210,255,0.5)',
-            }}
-          />
-          <div className="absolute inset-0 rounded-3xl" style={{ background: 'radial-gradient(circle at 50% 0%, rgba(0,210,255,0.06) 0%, transparent 60%)' }} />
-
-          <div className="relative">
-            <div className="text-5xl mb-6">💎</div>
-            <h2 className="text-4xl sm:text-5xl font-800 text-slate-100 mb-4">
-              Ready to join?
-            </h2>
-            <p className="text-lg text-slate-400 mb-10 max-w-xl mx-auto">
-              Join early users shaping the future of hnChat. Free forever. No credit card needed.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link
-                href="/sign-up-login"
-                className="px-10 py-4 rounded-2xl text-lg font-700 text-ice-black transition-all duration-300 hover:scale-105"
-                style={{
-                  background: 'linear-gradient(135deg, #00d2ff, #9b59ff)',
-                  boxShadow: '0 0 40px rgba(0,210,255,0.4)',
-                }}
-              >
-                🔥 Join hnChat Now
-              </Link>
-            </div>
-            <p className="text-sm text-slate-600 mt-6">Free to join · No credit card · Early access open</p>
+          <h2 className="text-3xl font-800 text-slate-100 mb-4">
+            Why Choose hnChat?
+          </h2>
+          <p className="text-slate-400 mb-8 max-w-2xl mx-auto">
+            hnChat is the only platform where you can post, chat, go live, trade crypto, shop, play games, and use multiple AI models — without ever switching apps.
+          </p>
+          <div className="grid grid-cols-3 gap-6">
+            {[
+              { icon: '🚀', label: 'All-in-One', desc: '10+ features in one app' },
+              { icon: '🤖', label: 'AI-Powered', desc: 'GPT-4, Claude & Gemini' },
+              { icon: '💰', label: 'Earn & Trade', desc: 'Marketplace + Crypto' },
+            ]?.map((item) => (
+              <div key={item?.label} className="text-center">
+                <div className="text-3xl mb-2">{item?.icon}</div>
+                <div className="font-700 text-slate-200 text-sm">{item?.label}</div>
+                <div className="text-xs text-slate-500 mt-1">{item?.desc}</div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="px-6 lg:px-12 py-12 border-t" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+      {/* FAQ Section — AEO Optimized */}
+      <section id="faq" className="px-6 lg:px-12 py-20 max-w-3xl mx-auto">
+        <div className="text-center mb-12">
+          <h2 className="text-3xl lg:text-4xl font-800 text-slate-100 mb-3">
+            Frequently Asked Questions
+          </h2>
+          <p className="text-slate-400">Everything you need to know about hnChat</p>
+        </div>
+        <div className="space-y-3">
+          {faqs?.map((faq, i) => (
             <div
-              className="w-8 h-8 rounded-xl flex items-center justify-center"
+              key={i}
+              className="rounded-2xl overflow-hidden cursor-pointer transition-all duration-200"
+              style={{
+                background: openFaq === i ? 'rgba(0,210,255,0.06)' : 'rgba(255,255,255,0.03)',
+                border: openFaq === i ? '1px solid rgba(0,210,255,0.2)' : '1px solid rgba(255,255,255,0.06)',
+              }}
+              onClick={() => setOpenFaq(openFaq === i ? null : i)}
+            >
+              <div className="flex items-center justify-between px-5 py-4">
+                <h3 className="font-600 text-slate-200 text-sm">{faq?.q}</h3>
+                <Icon
+                  name={openFaq === i ? 'ChevronUpIcon' : 'ChevronDownIcon'}
+                  size={16}
+                  className="text-slate-500 flex-shrink-0 ml-3"
+                />
+              </div>
+              {openFaq === i && (
+                <div className="px-5 pb-4">
+                  <p className="text-slate-400 text-sm leading-relaxed">{faq?.a}</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+      {/* Ad Banner — before CTA */}
+      <div className="max-w-4xl mx-auto px-6 mb-8">
+        <AdBanner adSlot="0987654321" adFormat="auto" className="rounded-xl" />
+      </div>
+      {/* Final CTA */}
+      <section id="community" className="px-6 py-24 text-center">
+        <h2 className="text-4xl lg:text-5xl font-800 text-slate-100 mb-6">
+          Ready to Join?
+        </h2>
+        <p className="text-slate-400 text-lg mb-10 max-w-xl mx-auto">
+          Create your free account and experience the future of social media.
+        </p>
+        <Link
+          href="/sign-up-login"
+          className="inline-flex px-10 py-4 rounded-2xl text-base font-700 text-white transition-all duration-200 hover:scale-105"
+          style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', boxShadow: '0 0 40px rgba(0,210,255,0.3)' }}
+        >
+          Start for Free →
+        </Link>
+      </section>
+      {/* Footer */}
+      <footer className="px-6 lg:px-12 py-10 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div
+              className="w-7 h-7 rounded-lg flex items-center justify-center"
               style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)' }}
             >
-              <AppLogo size={18} />
+              <AppLogo size={16} />
             </div>
             <span className="font-700 text-slate-300">hnChat</span>
           </div>
-          <p className="text-sm text-slate-600">© 2026 hnChat. All rights reserved.</p>
-          <div className="flex items-center gap-6">
-            <Link href="/sign-up-login" className="text-sm text-slate-500 hover:text-slate-300 transition-colors">Sign Up</Link>
-            <Link href="/home-feed" className="text-sm text-slate-500 hover:text-slate-300 transition-colors">App</Link>
+          <div className="flex items-center gap-6 text-sm text-slate-500">
+            <Link href="/privacy-policy" className="hover:text-slate-300 transition-colors">Privacy</Link>
+            <Link href="/terms-of-service" className="hover:text-slate-300 transition-colors">Terms</Link>
+            <Link href="/sign-up-login" className="hover:text-slate-300 transition-colors">Sign Up</Link>
           </div>
+          <p className="text-xs text-slate-600">© 2025 hnChat. All rights reserved.</p>
         </div>
       </footer>
     </div>

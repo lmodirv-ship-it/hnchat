@@ -1,9 +1,10 @@
 'use client';
-import React, { useState, useEffect, useId } from 'react';
+import React, { useState, useEffect, useId, useCallback } from 'react';
 import Icon from '@/components/ui/AppIcon';
 import AppImage from '@/components/ui/AppImage';
 import { toast, Toaster } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
 
 interface InvitedFriend {
   id: string;
@@ -20,26 +21,122 @@ const REWARDS = [
   { milestone: 5, label: '5 Friends', reward: '⭐ Premium Week', icon: 'StarIcon', color: '#f59e0b' },
   { milestone: 10, label: '10 Friends', reward: '💎 Premium Month', icon: 'GemIcon', color: '#a78bfa' },
   { milestone: 25, label: '25 Friends', reward: '🚀 Creator Badge', icon: 'RocketLaunchIcon', color: '#e879f9' },
-  { milestone: 50, label: '50 Friends', reward: '👑 VIP Status', icon: 'TrophyIcon', color: '#fbbf24' },
-];
-
-const mockFriends: InvitedFriend[] = [
-  { id: 'f1', name: 'Sara Benali', avatar: 'https://i.pravatar.cc/48?img=5', avatarAlt: 'Sara Benali profile picture', joinedAt: '2 days ago', status: 'active', reward: 50 },
-  { id: 'f2', name: 'Youssef Amrani', avatar: 'https://i.pravatar.cc/48?img=12', avatarAlt: 'Youssef Amrani profile picture', joinedAt: '5 days ago', status: 'active', reward: 50 },
-  { id: 'f3', name: 'Fatima Zahra', avatar: 'https://i.pravatar.cc/48?img=9', avatarAlt: 'Fatima Zahra profile picture', joinedAt: 'Pending', status: 'pending', reward: 0 },
+  { milestone: 50, label: '👑 VIP Status', reward: '👑 VIP Status', icon: 'TrophyIcon', color: '#fbbf24' },
 ];
 
 export default function InviteScreen() {
   const { user } = useAuth();
   const uid = useId();
+  const supabase = createClient();
   const [copied, setCopied] = useState(false);
-  const [friends] = useState<InvitedFriend[]>(mockFriends);
-  const [totalPoints] = useState(100);
-  const [totalInvited] = useState(2);
+  const [friends, setFriends] = useState<InvitedFriend[]>([]);
+  const [totalPoints, setTotalPoints] = useState(0);
+  const [totalInvited, setTotalInvited] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://hnchat7959.builtwithrocket.new';
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://hnchat.net';
   const inviteCode = user?.id ? user.id.slice(0, 8).toUpperCase() : 'HNCH1234';
   const inviteLink = `${baseUrl}/sign-up-login?ref=${inviteCode}`;
+
+  const loadData = useCallback(async () => {
+    if (!user) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      // Load referrals
+      const { data: referrals } = await supabase
+        .from('referrals')
+        .select('*, referred:referred_id(id, full_name, avatar_url, created_at)')
+        .eq('referrer_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (referrals) {
+        const mapped: InvitedFriend[] = referrals.map((r: any) => ({
+          id: r.id,
+          name: r.referred?.full_name || 'Pending User',
+          avatar: r.referred?.avatar_url || '',
+          avatarAlt: `${r.referred?.full_name || 'User'} profile picture`,
+          joinedAt: r.status === 'completed'
+            ? new Date(r.completed_at || r.created_at).toLocaleDateString()
+            : 'Pending',
+          status: r.status === 'completed' ? 'active' : 'pending',
+          reward: r.reward_granted ? 50 : 0,
+        }));
+        setFriends(mapped);
+        setTotalInvited(mapped.filter(f => f.status === 'active').length);
+      }
+
+      // Load points
+      const { data: pts } = await supabase
+        .from('user_points')
+        .select('balance, total_earned')
+        .eq('user_id', user.id)
+        .single();
+      if (pts) setTotalPoints(pts.balance);
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Handle referral code from URL on mount (when a referred user signs up)
+  useEffect(() => {
+    if (!user) return;
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (!ref) return;
+
+    // Find the referrer by code and create referral record
+    const processReferral = async () => {
+      try {
+        // Find referrer whose id starts with the code
+        const { data: referrer } = await supabase
+          .from('user_profiles')
+          .select('id')
+          .ilike('id', `${ref.toLowerCase()}%`)
+          .limit(1)
+          .single();
+
+        if (!referrer || referrer.id === user.id) return;
+
+        // Check if referral already exists
+        const { data: existing } = await supabase
+          .from('referrals')
+          .select('id')
+          .eq('referrer_id', referrer.id)
+          .eq('referred_id', user.id)
+          .single();
+
+        if (existing) return;
+
+        // Create referral
+        await supabase.from('referrals').insert({
+          referrer_id: referrer.id,
+          referred_id: user.id,
+          referral_code: ref,
+          status: 'completed',
+          reward_granted: true,
+          completed_at: new Date().toISOString(),
+        });
+
+        // Award points to referrer
+        await supabase.rpc('award_points', {
+          p_user_id: referrer.id,
+          p_amount: 50,
+          p_type: 'referral',
+          p_reason: 'Friend joined via your invite link',
+          p_reference_id: user.id,
+        });
+      } catch {
+        // silently fail
+      }
+    };
+    processReferral();
+  }, [user]);
 
   const copyLink = () => {
     navigator.clipboard.writeText(inviteLink).then(() => {
@@ -103,7 +200,7 @@ export default function InviteScreen() {
             style={{ background: 'rgba(0,210,255,0.1)', border: '1px solid rgba(0,210,255,0.2)', color: '#6ee7f7' }}
           >
             <Icon name="SparklesIcon" size={16} />
-            {totalPoints} Points Earned
+            {loading ? '...' : totalPoints} Points Earned
           </div>
         </div>
 
@@ -256,7 +353,13 @@ export default function InviteScreen() {
               {friends.length} total
             </span>
           </div>
-          {friends.length === 0 ? (
+          {loading ? (
+            <div className="space-y-2">
+              {[1, 2].map(i => (
+                <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: 'rgba(255,255,255,0.04)' }} />
+              ))}
+            </div>
+          ) : friends.length === 0 ? (
             <div className="text-center py-8">
               <Icon name="UserGroupIcon" size={32} className="text-slate-700 mx-auto mb-2" />
               <p className="text-sm text-slate-500">No friends invited yet</p>
@@ -270,13 +373,22 @@ export default function InviteScreen() {
                   className="flex items-center gap-3 p-3 rounded-xl"
                   style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
                 >
-                  <AppImage
-                    src={f.avatar}
-                    alt={f.avatarAlt}
-                    width={36}
-                    height={36}
-                    className="rounded-xl object-cover flex-shrink-0"
-                  />
+                  {f.avatar ? (
+                    <AppImage
+                      src={f.avatar}
+                      alt={f.avatarAlt}
+                      width={36}
+                      height={36}
+                      className="rounded-xl object-cover flex-shrink-0"
+                    />
+                  ) : (
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-700 flex-shrink-0"
+                      style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', color: '#050508' }}
+                    >
+                      {f.name[0]}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-600 text-slate-200">{f.name}</p>
                     <p className="text-xs text-slate-500">{f.joinedAt}</p>

@@ -1,7 +1,9 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import Icon from '@/components/ui/AppIcon';
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Coin {
   id: string;
@@ -15,14 +17,14 @@ interface Coin {
   color: string;
 }
 
-const generateChartData = (base: number, points = 30) =>
-  Array.from({ length: points }, (_, i) => ({
-    time: `${i}h`,
-    price: base + (Math.random() - 0.48) * base * 0.05 * (i + 1),
-    volume: Math.random() * 1000000,
-  }));
+interface PortfolioItem {
+  coin: Coin;
+  amount: number;
+  value: number;
+  avgBuyPrice: number;
+}
 
-const coins: Coin[] = [
+const COINS: Coin[] = [
   { id: 'hnc', symbol: 'HNC', name: 'hnCoin', price: 2.847, change24h: 12.4, volume: '$4.2M', marketCap: '$284M', emoji: '💎', color: '#00d2ff' },
   { id: 'btc', symbol: 'BTC', name: 'Bitcoin', price: 67420.5, change24h: 2.3, volume: '$28.4B', marketCap: '$1.32T', emoji: '₿', color: '#f7931a' },
   { id: 'eth', symbol: 'ETH', name: 'Ethereum', price: 3842.1, change24h: -1.2, volume: '$14.2B', marketCap: '$461B', emoji: 'Ξ', color: '#627eea' },
@@ -33,12 +35,21 @@ const coins: Coin[] = [
   { id: 'avax', symbol: 'AVAX', name: 'Avalanche', price: 38.7, change24h: 7.2, volume: '$680M', marketCap: '$15B', emoji: '▲', color: '#e84142' },
 ];
 
+const generateChartData = (base: number, points = 30) => {
+  let price = base;
+  return Array.from({ length: points }, (_, i) => {
+    const delta = (i % 3 === 0 ? 1 : -0.5) * base * 0.008;
+    price = price + delta;
+    return { time: `${i}h`, price, volume: base * 100 + i * 1000 };
+  });
+};
+
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className="px-3 py-2 rounded-xl text-xs"
         style={{ background: 'rgba(10,10,18,0.95)', border: '1px solid rgba(0,210,255,0.2)', backdropFilter: 'blur(12px)' }}>
-        <p className="text-cyan-glow font-700">${payload[0].value.toFixed(2)}</p>
+        <p className="text-cyan-glow font-700">${payload[0]?.value?.toFixed(2)}</p>
       </div>
     );
   }
@@ -46,46 +57,148 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 export default function CryptoTradingScreen() {
-  const [selectedCoin, setSelectedCoin] = useState<Coin>(coins[0]);
-  const [chartData, setChartData] = useState(generateChartData(coins[0].price));
+  const [selectedCoin, setSelectedCoin] = useState<Coin>(COINS[0]);
+  const [chartData, setChartData] = useState(generateChartData(COINS[0].price));
   const [activeTab, setActiveTab] = useState<'market' | 'portfolio' | 'trade' | 'news'>('market');
   const [tradeType, setTradeType] = useState<'buy' | 'sell'>('buy');
   const [amount, setAmount] = useState('');
   const [timeframe, setTimeframe] = useState('1D');
   const [prices, setPrices] = useState<Record<string, number>>(
-    Object.fromEntries(coins.map(c => [c.id, c.price]))
+    Object.fromEntries(COINS.map(c => [c.id, c.price]))
   );
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
+  const [tradeLoading, setTradeLoading] = useState(false);
+  const [tradeError, setTradeError] = useState('');
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    // Deterministic price simulation (no Math.random in render)
+    let tick = 0;
+    intervalRef.current = setInterval(() => {
+      tick++;
       setPrices(prev => {
         const updated = { ...prev };
-        coins.forEach(c => {
-          updated[c.id] = prev[c.id] * (1 + (Math.random() - 0.499) * 0.002);
+        COINS.forEach((c, idx) => {
+          const direction = ((tick + idx) % 3 === 0) ? 1 : -1;
+          updated[c.id] = prev[c.id] * (1 + direction * 0.001);
         });
         return updated;
       });
       setChartData(prev => {
         const last = prev[prev.length - 1];
-        const newPoint = { time: 'now', price: last.price * (1 + (Math.random() - 0.499) * 0.003), volume: Math.random() * 1000000 };
+        const direction = tick % 2 === 0 ? 1 : -1;
+        const newPoint = { time: 'now', price: last.price * (1 + direction * 0.002), volume: last.volume };
         return [...prev.slice(1), newPoint];
       });
     }, 2000);
-    return () => clearInterval(interval);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, []);
+
+  useEffect(() => {
+    if (user) fetchPortfolio();
+  }, [user]);
+
+  const fetchPortfolio = async () => {
+    if (!user) return;
+    setPortfolioLoading(true);
+    const supabase = createClient();
+    try {
+      const { data, error } = await supabase
+        .from('crypto_portfolio')
+        .select('*')
+        .eq('user_id', user.id);
+
+      if (error) { console.log('Portfolio fetch error:', error.message); return; }
+
+      const items: PortfolioItem[] = (data || []).map((row: any) => {
+        const coin = COINS.find(c => c.id === row.coin_id) || {
+          id: row.coin_id, symbol: row.coin_symbol, name: row.coin_name,
+          price: row.avg_buy_price, change24h: 0, volume: '-', marketCap: '-',
+          emoji: '🪙', color: '#94a3b8',
+        };
+        const currentPrice = prices[coin.id] || coin.price;
+        return { coin, amount: row.amount, value: row.amount * currentPrice, avgBuyPrice: row.avg_buy_price };
+      });
+      setPortfolio(items);
+    } catch (e) {
+      console.log('Portfolio fetch failed');
+    } finally {
+      setPortfolioLoading(false);
+    }
+  };
+
+  const handleTrade = async () => {
+    if (!user || !amount || parseFloat(amount) <= 0) return;
+    setTradeLoading(true);
+    setTradeError('');
+    const supabase = createClient();
+    const currentPrice = prices[selectedCoin.id];
+    const amountNum = parseFloat(amount);
+    const totalUsdt = amountNum;
+    const coinAmount = totalUsdt / currentPrice;
+
+    try {
+      // Record trade
+      await supabase.from('crypto_trades').insert({
+        user_id: user.id,
+        coin_id: selectedCoin.id,
+        coin_symbol: selectedCoin.symbol,
+        trade_type: tradeType,
+        amount: coinAmount,
+        price_at_trade: currentPrice,
+        total_usdt: totalUsdt,
+      });
+
+      // Update portfolio
+      if (tradeType === 'buy') {
+        const existing = portfolio.find(p => p.coin.id === selectedCoin.id);
+        if (existing) {
+          const newAmount = existing.amount + coinAmount;
+          const newAvg = ((existing.amount * existing.avgBuyPrice) + totalUsdt) / newAmount;
+          await supabase.from('crypto_portfolio')
+            .update({ amount: newAmount, avg_buy_price: newAvg, updated_at: new Date().toISOString() })
+            .eq('user_id', user.id).eq('coin_id', selectedCoin.id);
+        } else {
+          await supabase.from('crypto_portfolio').insert({
+            user_id: user.id, coin_id: selectedCoin.id,
+            coin_symbol: selectedCoin.symbol, coin_name: selectedCoin.name,
+            amount: coinAmount, avg_buy_price: currentPrice,
+          });
+        }
+      } else {
+        const existing = portfolio.find(p => p.coin.id === selectedCoin.id);
+        if (existing && existing.amount >= coinAmount) {
+          const newAmount = existing.amount - coinAmount;
+          if (newAmount < 0.00001) {
+            await supabase.from('crypto_portfolio').delete().eq('user_id', user.id).eq('coin_id', selectedCoin.id);
+          } else {
+            await supabase.from('crypto_portfolio').update({ amount: newAmount, updated_at: new Date().toISOString() })
+              .eq('user_id', user.id).eq('coin_id', selectedCoin.id);
+          }
+        } else {
+          setTradeError('Insufficient balance');
+          return;
+        }
+      }
+
+      setAmount('');
+      await fetchPortfolio();
+    } catch (e) {
+      console.log('Trade failed');
+      setTradeError('Trade failed. Please try again.');
+    } finally {
+      setTradeLoading(false);
+    }
+  };
 
   const selectCoin = (coin: Coin) => {
     setSelectedCoin(coin);
     setChartData(generateChartData(coin.price));
   };
 
-  const portfolioItems = [
-    { coin: coins[0], amount: 1250, value: 3558.75 },
-    { coin: coins[1], amount: 0.05, value: 3371.03 },
-    { coin: coins[2], amount: 1.2, value: 4610.52 },
-    { coin: coins[3], amount: 45, value: 8208.0 },
-  ];
-  const totalPortfolio = portfolioItems.reduce((s, i) => s + i.value, 0);
+  const totalPortfolio = portfolio.reduce((s, i) => s + i.value, 0);
 
   return (
     <div className="max-w-screen-2xl mx-auto px-4 lg:px-8 py-6 pb-24 lg:pb-6">
@@ -126,7 +239,7 @@ export default function CryptoTradingScreen() {
           {/* Coin List */}
           <div className="lg:col-span-1 space-y-2">
             <h3 className="text-sm font-700 text-slate-400 mb-3 uppercase tracking-wider">All Markets</h3>
-            {coins.map(coin => (
+            {COINS.map(coin => (
               <button key={coin.id} onClick={() => selectCoin(coin)}
                 className="w-full flex items-center gap-3 p-3 rounded-2xl transition-all duration-200 text-left"
                 style={{
@@ -144,7 +257,7 @@ export default function CryptoTradingScreen() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <span className="font-700 text-sm text-slate-200">{coin.symbol}</span>
-                    <span className="font-700 text-sm text-slate-200">${prices[coin.id].toFixed(coin.price < 1 ? 4 : 2)}</span>
+                    <span className="font-700 text-sm text-slate-200">${prices[coin.id]?.toFixed(coin.price < 1 ? 4 : 2)}</span>
                   </div>
                   <div className="flex items-center justify-between mt-0.5">
                     <span className="text-xs text-slate-500">{coin.name}</span>
@@ -159,7 +272,6 @@ export default function CryptoTradingScreen() {
 
           {/* Chart + Details */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Selected Coin Header */}
             <div className="glass-card p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
@@ -174,7 +286,7 @@ export default function CryptoTradingScreen() {
                 </div>
                 <div className="text-right">
                   <p className="text-3xl font-800 gradient-text tabular-nums">
-                    ${prices[selectedCoin.id].toFixed(selectedCoin.price < 1 ? 4 : 2)}
+                    ${prices[selectedCoin.id]?.toFixed(selectedCoin.price < 1 ? 4 : 2)}
                   </p>
                   <p className={`text-sm font-700 ${selectedCoin.change24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {selectedCoin.change24h >= 0 ? '▲' : '▼'} {Math.abs(selectedCoin.change24h)}% (24h)
@@ -182,22 +294,19 @@ export default function CryptoTradingScreen() {
                 </div>
               </div>
 
-              {/* Stats */}
               <div className="grid grid-cols-3 gap-4 mb-4">
                 {[
                   { label: 'Volume 24h', value: selectedCoin.volume },
                   { label: 'Market Cap', value: selectedCoin.marketCap },
-                  { label: 'Rank', value: `#${coins.findIndex(c => c.id === selectedCoin.id) + 1}` },
+                  { label: 'Rank', value: `#${COINS.findIndex(c => c.id === selectedCoin.id) + 1}` },
                 ].map(stat => (
-                  <div key={stat.label} className="text-center p-3 rounded-xl"
-                    style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  <div key={stat.label} className="text-center p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
                     <p className="font-700 text-sm gradient-text-static">{stat.value}</p>
                     <p className="text-xs text-slate-500 mt-0.5">{stat.label}</p>
                   </div>
                 ))}
               </div>
 
-              {/* Timeframe */}
               <div className="flex gap-1 mb-4">
                 {['1H', '1D', '1W', '1M', '1Y'].map(tf => (
                   <button key={tf} onClick={() => setTimeframe(tf)}
@@ -210,7 +319,6 @@ export default function CryptoTradingScreen() {
                 ))}
               </div>
 
-              {/* Chart */}
               <div style={{ height: 200 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={chartData}>
@@ -260,11 +368,14 @@ export default function CryptoTradingScreen() {
                     </button>
                   ))}
                 </div>
-                <button className="w-full py-3 rounded-xl text-sm font-700 transition-all duration-200"
+                {tradeError && <p className="text-red-400 text-xs">{tradeError}</p>}
+                {!user && <p className="text-slate-500 text-xs">Sign in to trade</p>}
+                <button onClick={handleTrade} disabled={tradeLoading || !user || !amount}
+                  className="w-full py-3 rounded-xl text-sm font-700 transition-all duration-200 disabled:opacity-50"
                   style={tradeType === 'buy'
                     ? { background: 'linear-gradient(135deg, #34d399, #059669)', color: 'white', boxShadow: '0 4px 20px rgba(52,211,153,0.3)' }
                     : { background: 'linear-gradient(135deg, #f87171, #dc2626)', color: 'white', boxShadow: '0 4px 20px rgba(239,68,68,0.3)' }}>
-                  {tradeType === 'buy' ? `Buy ${selectedCoin.symbol}` : `Sell ${selectedCoin.symbol}`}
+                  {tradeLoading ? 'Processing...' : `${tradeType === 'buy' ? 'Buy' : 'Sell'} ${selectedCoin.symbol}`}
                 </button>
               </div>
             </div>
@@ -274,41 +385,55 @@ export default function CryptoTradingScreen() {
 
       {activeTab === 'portfolio' && (
         <div className="max-w-2xl space-y-4">
-          {/* Total Value */}
           <div className="glass-card p-6 text-center"
             style={{ background: 'linear-gradient(135deg, rgba(0,210,255,0.08), rgba(155,89,255,0.08))' }}>
             <p className="text-sm text-slate-400 mb-1">Total Portfolio Value</p>
             <p className="text-4xl font-800 gradient-text tabular-nums">${totalPortfolio.toFixed(2)}</p>
-            <p className="text-sm text-green-400 font-600 mt-1">▲ +18.4% this month</p>
+            {portfolio.length > 0 && (
+              <p className="text-sm text-green-400 font-600 mt-1">
+                {portfolio.length} asset{portfolio.length > 1 ? 's' : ''} held
+              </p>
+            )}
           </div>
 
-          {/* Holdings */}
-          <div className="space-y-3">
-            {portfolioItems.map(item => (
-              <div key={item.coin.id} className="glass-card p-4 flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-                  style={{ background: `${item.coin.color}22` }}>
-                  {item.coin.emoji}
+          {portfolioLoading ? (
+            <div className="space-y-3">
+              {[1,2,3].map(i => (
+                <div key={i} className="h-20 rounded-2xl animate-pulse" style={{ background: 'rgba(255,255,255,0.04)' }} />
+              ))}
+            </div>
+          ) : portfolio.length === 0 ? (
+            <div className="glass-card p-8 text-center">
+              <p className="text-slate-500 text-sm">No holdings yet. Start trading to build your portfolio!</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {portfolio.map(item => (
+                <div key={item.coin.id} className="glass-card p-4 flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+                    style={{ background: `${item.coin.color}22` }}>
+                    {item.coin.emoji}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-700 text-slate-200">{item.coin.symbol}</span>
+                      <span className="font-700 gradient-text-static">${item.value.toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500">{item.amount.toFixed(4)} {item.coin.symbol}</span>
+                      <span className={`text-xs font-600 ${item.coin.change24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {item.coin.change24h >= 0 ? '+' : ''}{item.coin.change24h}%
+                      </span>
+                    </div>
+                    <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                      <div className="h-full rounded-full"
+                        style={{ width: `${totalPortfolio > 0 ? (item.value / totalPortfolio) * 100 : 0}%`, background: `linear-gradient(90deg, ${item.coin.color}, #9b59ff)` }} />
+                    </div>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-700 text-slate-200">{item.coin.symbol}</span>
-                    <span className="font-700 gradient-text-static">${item.value.toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500">{item.amount} {item.coin.symbol}</span>
-                    <span className={`text-xs font-600 ${item.coin.change24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {item.coin.change24h >= 0 ? '+' : ''}{item.coin.change24h}%
-                    </span>
-                  </div>
-                  <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                    <div className="h-full rounded-full"
-                      style={{ width: `${(item.value / totalPortfolio) * 100}%`, background: `linear-gradient(90deg, ${item.coin.color}, #9b59ff)` }} />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

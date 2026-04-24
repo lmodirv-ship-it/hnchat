@@ -16,7 +16,10 @@ const nextConfig = {
   images: {
     remotePatterns: imageHosts,
     minimumCacheTTL: 60,
+    formats: ['image/avif', 'image/webp'],
   },
+
+  compress: true,
 
   async redirects() {
     return [
@@ -29,7 +32,7 @@ const nextConfig = {
   },
 
   webpack(config) {
-config.module.rules.push({
+    config.module.rules.push({
       test: /\.(jsx|tsx)$/,
       exclude: [/node_modules/],
       use: [{ loader: '@dhiwise/component-tagger/nextLoader' }],

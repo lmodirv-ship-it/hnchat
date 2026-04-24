@@ -1,6 +1,9 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { useAuth } from '@/contexts/AuthContext';
+import { createClient } from '@/lib/supabase/client';
+import { toast } from 'sonner';
 
 interface LiveRoom {
   id: string;
@@ -25,6 +28,17 @@ interface ChatMsg {
   gift?: string;
 }
 
+const GIFT_CONFIG: Record<string, { name: string; cost: number }> = {
+  '💎': { name: 'Diamond', cost: 50 },
+  '🚀': { name: 'Rocket', cost: 30 },
+  '🔥': { name: 'Fire', cost: 20 },
+  '⭐': { name: 'Star', cost: 15 },
+  '👑': { name: 'Crown', cost: 100 },
+  '💰': { name: 'Money Bag', cost: 40 },
+  '🎯': { name: 'Target', cost: 10 },
+  '🌟': { name: 'Glowing Star', cost: 25 },
+};
+
 const liveRooms: LiveRoom[] = [
 { id: 'lr1', host: 'Nova_Star', avatar: 'NS', title: '🎵 Live DJ Set — Future Beats Vol.3', category: 'Music', viewers: 12840, isLive: true, isGroup: false, thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_1318662b8-1764637600231.png", tags: ['EDM', 'Live', 'DJ'], duration: '1:24:33' },
 { id: 'lr2', host: 'TechTalk Group', avatar: 'TT', title: '🤖 AI Revolution — Group Discussion', category: 'Tech', viewers: 8320, isLive: true, isGroup: true, groupName: 'Tech Innovators', thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_198ad9e76-1766563899922.png", tags: ['AI', 'Tech', 'Group'], duration: '0:45:12' },
@@ -33,7 +47,6 @@ const liveRooms: LiveRoom[] = [
 { id: 'lr5', host: 'FitnessPro', avatar: 'FP', title: '💪 Morning Workout — Join Live!', category: 'Fitness', viewers: 6780, isLive: true, isGroup: false, thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_104410f72-1773058542566.png", tags: ['Fitness', 'Health', 'Workout'], duration: '0:58:44' },
 { id: 'lr6', host: 'GamersUnite', avatar: 'GU', title: '🎮 Tournament Finals — Watch Party', category: 'Gaming', viewers: 45200, isLive: true, isGroup: true, groupName: 'Pro Gamers', thumbnail: "https://img.rocket.new/generatedImages/rocket_gen_img_13b568c04-1770510210068.png", tags: ['Gaming', 'Tournament', 'Esports'], duration: '3:02:11' }];
 
-
 const initialChats: ChatMsg[] = [
 { id: 1, user: 'Alex_M', text: 'This is incredible! 🔥', color: '#00d2ff' },
 { id: 2, user: 'Sara_V', text: 'Love the energy tonight!', color: '#c084fc' },
@@ -41,10 +54,11 @@ const initialChats: ChatMsg[] = [
 { id: 4, user: 'CryptoFan', text: '💎💎💎 Diamond hands!', color: '#fbbf24' },
 { id: 5, user: 'TechGuru', text: 'Can you explain the algorithm?', color: '#f87171' }];
 
-
-const gifts = ['💎', '🚀', '🔥', '⭐', '👑', '💰', '🎯', '🌟'];
+const gifts = Object.keys(GIFT_CONFIG);
 
 export default function LiveStreamScreen() {
+  const { user } = useAuth();
+  const supabase = createClient();
   const [activeTab, setActiveTab] = useState<'discover' | 'groups' | 'following' | 'schedule'>('discover');
   const [selectedRoom, setSelectedRoom] = useState<LiveRoom | null>(liveRooms[0]);
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>(initialChats);
@@ -53,9 +67,20 @@ export default function LiveStreamScreen() {
   const [viewerCount, setViewerCount] = useState(liveRooms[0].viewers);
   const [showGifts, setShowGifts] = useState(false);
   const [filterCat, setFilterCat] = useState('All');
+  const [userPoints, setUserPoints] = useState(0);
   const chatRef = useRef<HTMLDivElement>(null);
 
   const categories = ['All', 'Music', 'Tech', 'Finance', 'Art', 'Fitness', 'Gaming'];
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('user_points')
+      .select('balance')
+      .eq('user_id', user.id)
+      .single()
+      .then(({ data }) => { if (data) setUserPoints(data.balance); });
+  }, [user]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -85,9 +110,53 @@ export default function LiveStreamScreen() {
     setChatInput('');
   };
 
-  const sendGift = (gift: string) => {
-    setChatMessages((prev) => [...prev, { id: Date.now(), user: 'You', text: `Sent a gift ${gift}`, color: '#fbbf24', gift }]);
+  const sendGift = async (gift: string) => {
+    if (!user) { toast.error('Sign in to send gifts'); return; }
+    const config = GIFT_CONFIG[gift];
+    if (!config) return;
+
+    if (userPoints < config.cost) {
+      toast.error(`Not enough points! You need ${config.cost} points for ${config.name}`);
+      setShowGifts(false);
+      return;
+    }
+
+    // Optimistic UI update
+    setChatMessages((prev) => [...prev, { id: Date.now(), user: 'You', text: `Sent a ${config.name} gift ${gift} (${config.cost} pts)`, color: '#fbbf24', gift }]);
     setShowGifts(false);
+    setUserPoints(prev => prev - config.cost);
+
+    try {
+      // Spend points from sender
+      const { data: spent } = await supabase.rpc('spend_points', {
+        p_user_id: user.id,
+        p_amount: config.cost,
+        p_type: 'gift_sent',
+        p_reason: `Sent ${config.name} gift in live stream`,
+        p_reference_id: selectedRoom?.id || null,
+      });
+
+      if (!spent) {
+        toast.error('Insufficient points');
+        setUserPoints(prev => prev + config.cost);
+        return;
+      }
+
+      // Record gift transaction
+      await supabase.from('live_stream_gifts').insert({
+        sender_id: user.id,
+        receiver_id: user.id, // In real app, use stream host's user_id
+        stream_id: selectedRoom?.id,
+        gift_emoji: gift,
+        gift_name: config.name,
+        points_cost: config.cost,
+      });
+
+      toast.success(`${config.name} ${gift} sent! (-${config.cost} pts)`);
+    } catch {
+      toast.error('Failed to send gift');
+      setUserPoints(prev => prev + config.cost);
+    }
   };
 
   const filteredRooms = filterCat === 'All' ? liveRooms : liveRooms.filter((r) => r.category === filterCat);
@@ -312,7 +381,11 @@ export default function LiveStreamScreen() {
             <Icon name="ChatBubbleLeftRightIcon" size={15} className="text-cyan-glow" />
             Live Chat
           </span>
-          <span className="text-xs text-slate-500">{chatMessages.length} messages</span>
+          {user && (
+            <span className="text-xs font-600 px-2 py-1 rounded-lg" style={{ background: 'rgba(0,210,255,0.1)', color: '#6ee7f7' }}>
+              💎 {userPoints} pts
+            </span>
+          )}
         </div>
 
         {/* Messages */}
@@ -334,15 +407,22 @@ export default function LiveStreamScreen() {
 
         {/* Gift selector */}
         {showGifts &&
-        <div className="p-3 border-t grid grid-cols-4 gap-2" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-            {gifts.map((g) =>
-          <button key={g} onClick={() => sendGift(g)}
-          className="text-2xl p-2 rounded-xl transition-all duration-150 hover:scale-125"
-          style={{ background: 'rgba(255,255,255,0.05)' }}>
-                {g}
-              </button>
-          )}
+        <div className="p-3 border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+          <p className="text-xs text-slate-500 mb-2">Your points: <span className="text-cyan-400 font-600">{userPoints}</span></p>
+          <div className="grid grid-cols-4 gap-2">
+            {gifts.map((g) => {
+              const cfg = GIFT_CONFIG[g];
+              return (
+                <button key={g} onClick={() => sendGift(g)}
+                className="flex flex-col items-center gap-1 p-2 rounded-xl transition-all duration-150 hover:scale-110"
+                style={{ background: 'rgba(255,255,255,0.05)' }}>
+                  <span className="text-xl">{g}</span>
+                  <span className="text-xs text-slate-500">{cfg.cost}pts</span>
+                </button>
+              );
+            })}
           </div>
+        </div>
         }
 
         {/* Chat Input */}
@@ -350,7 +430,7 @@ export default function LiveStreamScreen() {
           <div className="flex gap-2">
             <button onClick={() => setShowGifts(!showGifts)}
             className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-base transition-all duration-150"
-            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            style={{ background: showGifts ? 'rgba(0,210,255,0.15)' : 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
               🎁
             </button>
             <input

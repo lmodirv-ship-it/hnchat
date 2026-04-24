@@ -74,12 +74,31 @@ export default function ChatWindow({ conversation, onToggleInfo, showInfo }: Cha
             if (prev.some((m) => m.id === data.id)) return prev;
             return [...prev, data];
           });
+
+          // 🔔 Brevo: trigger message received email for the recipient (not the sender)
+          // Only notify if the message was sent by someone else (not the current user)
+          if (data.sender_id !== user?.id && user?.email) {
+            fetch('/api/email/message-received', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: user.email,
+                name: user.user_metadata?.full_name || user.email?.split('@')[0] || '',
+                senderName:
+                  data.sender?.full_name ||
+                  data.sender?.username ||
+                  conversation?.user ||
+                  'Someone',
+                messagePreview: data.content || '',
+              }),
+            }).catch(() => {});
+          }
         }
       }
     );
 
     return () => { unsubscribe(); };
-  }, [conversation?.conversationId]);
+  }, [conversation?.conversationId, user?.id, user?.email, user?.user_metadata, conversation?.user]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
