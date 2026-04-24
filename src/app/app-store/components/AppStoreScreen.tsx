@@ -1,9 +1,11 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface App {
-  id: number;
+  id: string;
   name: string;
   category: string;
   rating: number;
@@ -17,29 +19,91 @@ interface App {
   description: string;
 }
 
-const apps: App[] = [
-  { id: 1, name: 'Diamond AI Studio', category: 'Productivity', rating: 4.9, reviews: '124K', price: 'Free', icon: '💎', gradient: 'from-cyan-500 to-violet-600', installed: true, featured: true, size: '48 MB', description: 'Create stunning AI-generated art and content with diamond-grade quality.' },
-  { id: 2, name: 'Crystal Music', category: 'Music', rating: 4.8, reviews: '89K', price: 'Free', icon: '🎵', gradient: 'from-pink-500 to-rose-600', installed: false, featured: true, size: '32 MB', description: 'Stream millions of songs with crystal-clear audio quality.' },
-  { id: 3, name: 'Nexus Games Hub', category: 'Games', rating: 4.7, reviews: '256K', price: 'Free', icon: '🎮', gradient: 'from-orange-500 to-amber-600', installed: true, featured: false, size: '128 MB', description: 'Play hundreds of premium games without downloads.' },
-  { id: 4, name: 'Prism Photo Editor', category: 'Photo & Video', rating: 4.9, reviews: '67K', price: '$2.99', icon: '🎨', gradient: 'from-violet-500 to-purple-600', installed: false, featured: true, size: '56 MB', description: 'Professional photo editing with AI-powered filters and effects.' },
-  { id: 5, name: 'Orbit Finance', category: 'Finance', rating: 4.6, reviews: '43K', price: 'Free', icon: '💰', gradient: 'from-emerald-500 to-teal-600', installed: false, featured: false, size: '24 MB', description: 'Track your finances, investments, and crypto portfolio.' },
-  { id: 6, name: 'Nova Fitness', category: 'Health', rating: 4.8, reviews: '91K', price: 'Free', icon: '💪', gradient: 'from-red-500 to-orange-600', installed: true, featured: false, size: '38 MB', description: 'AI-powered workout plans and nutrition tracking.' },
-  { id: 7, name: 'Stellar Maps', category: 'Navigation', rating: 4.7, reviews: '178K', price: 'Free', icon: '🗺️', gradient: 'from-blue-500 to-indigo-600', installed: false, featured: false, size: '62 MB', description: 'Real-time navigation with AR overlay and diamond routing.' },
-  { id: 8, name: 'Quantum VPN', category: 'Utilities', rating: 4.5, reviews: '34K', price: '$4.99/mo', icon: '🔐', gradient: 'from-slate-500 to-slate-700', installed: false, featured: false, size: '12 MB', description: 'Military-grade encryption for your digital privacy.' },
-];
-
 const categories = ['All', 'Featured', 'Games', 'Productivity', 'Music', 'Photo & Video', 'Finance', 'Health', 'Utilities'];
 
 export default function AppStoreScreen() {
+  const [apps, setApps] = useState<App[]>([]);
+  const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
   const [activeCategory, setActiveCategory] = useState('All');
-  const [installed, setInstalled] = useState<Set<number>>(new Set(apps.filter(a => a.installed).map(a => a.id)));
   const [selectedApp, setSelectedApp] = useState<App | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const { user } = useAuth();
+
+  useEffect(() => {
+    fetchApps();
+  }, []);
+
+  useEffect(() => {
+    if (user) fetchInstalledApps();
+  }, [user]);
+
+  const fetchApps = async () => {
+    const supabase = createClient();
+    try {
+      const { data, error } = await supabase
+        .from('store_apps')
+        .select('*')
+        .order('sort_order', { ascending: true });
+
+      if (error) { console.log('Apps fetch error:', error.message); return; }
+
+      setApps((data || []).map(a => ({
+        id: a.id, name: a.name, category: a.category, description: a.description,
+        icon: a.icon, gradient: a.gradient, rating: a.rating, reviews: a.review_count,
+        price: a.price, size: a.app_size, featured: a.is_featured, installed: false,
+      })));
+    } catch (e) {
+      console.log('Apps fetch failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchInstalledApps = async () => {
+    if (!user) return;
+    const supabase = createClient();
+    try {
+      const { data, error } = await supabase
+        .from('user_installed_apps')
+        .select('app_id')
+        .eq('user_id', user.id);
+
+      if (error) { console.log('Installed apps fetch error:', error.message); return; }
+      setInstalledIds(new Set((data || []).map((r: any) => r.app_id)));
+    } catch (e) {
+      console.log('Installed apps fetch failed');
+    }
+  };
+
+  const handleInstallToggle = async (appId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!user) return;
+    const supabase = createClient();
+    const isInstalled = installedIds.has(appId);
+
+    try {
+      if (isInstalled) {
+        await supabase.from('user_installed_apps').delete().eq('user_id', user.id).eq('app_id', appId);
+        setInstalledIds(prev => { const n = new Set(prev); n.delete(appId); return n; });
+      } else {
+        await supabase.from('user_installed_apps').insert({ user_id: user.id, app_id: appId });
+        setInstalledIds(prev => new Set([...prev, appId]));
+      }
+    } catch (e) {
+      console.log('Install toggle failed');
+    }
+  };
 
   const filtered = apps.filter(a => {
-    if (activeCategory === 'All') return true;
-    if (activeCategory === 'Featured') return a.featured;
-    return a.category === activeCategory;
+    const matchesCategory = activeCategory === 'All' ? true
+      : activeCategory === 'Featured' ? a.featured
+      : a.category === activeCategory;
+    const matchesSearch = searchQuery === '' || a.name.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCategory && matchesSearch;
   });
+
+  const featuredApp = apps.find(a => a.featured);
 
   return (
     <div className="flex h-full bg-ice-black">
@@ -52,7 +116,10 @@ export default function AppStoreScreen() {
           {/* Search */}
           <div className="relative mt-4">
             <Icon name="MagnifyingGlassIcon" size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input placeholder="Search apps, games, tools..."
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search apps, games, tools..."
               className="w-full pl-10 pr-4 py-2.5 rounded-2xl text-sm text-slate-200 outline-none placeholder-slate-600"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }} />
           </div>
@@ -72,64 +139,76 @@ export default function AppStoreScreen() {
         </div>
 
         <div className="p-6">
-          {/* Featured banner */}
-          {activeCategory === 'All' && (
-            <div className="glass-card p-5 mb-6 bg-gradient-to-r from-cyan-500/10 to-violet-500/10 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 text-8xl flex items-center justify-center opacity-20">💎</div>
-              <div className="relative z-10">
-                <span className="text-xs font-700 px-2 py-0.5 rounded-full mb-2 inline-block"
-                  style={{ background: 'rgba(0,210,255,0.2)', color: '#00d2ff', border: '1px solid rgba(0,210,255,0.3)' }}>
-                  ⭐ App of the Week
-                </span>
-                <h3 className="text-xl font-800 text-slate-100 mb-1">Diamond AI Studio</h3>
-                <p className="text-slate-400 text-sm mb-3">Create stunning AI-generated art with diamond-grade quality tools</p>
-                <button className="btn-primary text-sm px-6 py-2">Get for Free</button>
-              </div>
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {[1,2,3,4,5,6].map(i => (
+                <div key={i} className="h-36 rounded-2xl animate-pulse" style={{ background: 'rgba(255,255,255,0.04)' }} />
+              ))}
             </div>
-          )}
+          ) : (
+            <>
+              {/* Featured banner */}
+              {activeCategory === 'All' && featuredApp && !searchQuery && (
+                <div className="glass-card p-5 mb-6 bg-gradient-to-r from-cyan-500/10 to-violet-500/10 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 text-8xl flex items-center justify-center opacity-20">{featuredApp.icon}</div>
+                  <div className="relative z-10">
+                    <span className="text-xs font-700 px-2 py-0.5 rounded-full mb-2 inline-block"
+                      style={{ background: 'rgba(0,210,255,0.2)', color: '#00d2ff', border: '1px solid rgba(0,210,255,0.3)' }}>
+                      ⭐ App of the Week
+                    </span>
+                    <h3 className="text-xl font-800 text-slate-100 mb-1">{featuredApp.name}</h3>
+                    <p className="text-slate-400 text-sm mb-3">{featuredApp.description}</p>
+                    <button onClick={() => handleInstallToggle(featuredApp.id)} className="btn-primary text-sm px-6 py-2">
+                      {installedIds.has(featuredApp.id) ? 'Open' : 'Get for Free'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
-          {/* App grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map(app => (
-              <div key={app.id} className="glass-card-hover p-4 cursor-pointer" onClick={() => setSelectedApp(app)}>
-                <div className="flex items-start gap-3">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 bg-gradient-to-br ${app.gradient}`}
-                    style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
-                    {app.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h3 className="text-slate-100 font-700 text-sm">{app.name}</h3>
-                        <p className="text-slate-500 text-xs">{app.category}</p>
+              {/* App grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filtered.map(app => (
+                  <div key={app.id} className="glass-card-hover p-4 cursor-pointer" onClick={() => setSelectedApp(app)}>
+                    <div className="flex items-start gap-3">
+                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 bg-gradient-to-br ${app.gradient}`}
+                        style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+                        {app.icon}
                       </div>
-                      {app.featured && (
-                        <span className="text-xs px-1.5 py-0.5 rounded-lg flex-shrink-0"
-                          style={{ background: 'rgba(0,210,255,0.1)', color: '#00d2ff' }}>⭐</span>
-                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h3 className="text-slate-100 font-700 text-sm">{app.name}</h3>
+                            <p className="text-slate-500 text-xs">{app.category}</p>
+                          </div>
+                          {app.featured && (
+                            <span className="text-xs px-1.5 py-0.5 rounded-lg flex-shrink-0"
+                              style={{ background: 'rgba(0,210,255,0.1)', color: '#00d2ff' }}>⭐</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 mt-1">
+                          <span className="text-yellow-400 text-xs">★</span>
+                          <span className="text-slate-300 text-xs font-600">{app.rating}</span>
+                          <span className="text-slate-600 text-xs">({app.reviews})</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-yellow-400 text-xs">★</span>
-                      <span className="text-slate-300 text-xs font-600">{app.rating}</span>
-                      <span className="text-slate-600 text-xs">({app.reviews})</span>
+                    <p className="text-slate-500 text-xs mt-3 line-clamp-2">{app.description}</p>
+                    <div className="flex items-center justify-between mt-3">
+                      <span className="text-slate-400 text-xs">{app.size}</span>
+                      <button
+                        onClick={e => handleInstallToggle(app.id, e)}
+                        className="px-4 py-1.5 rounded-xl text-xs font-700 transition-all duration-200"
+                        style={installedIds.has(app.id)
+                          ? { background: 'rgba(255,255,255,0.08)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.1)' }
+                          : { background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', color: '#050508' }}>
+                        {installedIds.has(app.id) ? 'Open' : app.price === 'Free' ? 'Get' : app.price}
+                      </button>
                     </div>
                   </div>
-                </div>
-                <p className="text-slate-500 text-xs mt-3 line-clamp-2">{app.description}</p>
-                <div className="flex items-center justify-between mt-3">
-                  <span className="text-slate-400 text-xs">{app.size}</span>
-                  <button
-                    onClick={e => { e.stopPropagation(); setInstalled(prev => { const n = new Set(prev); n.has(app.id) ? n.delete(app.id) : n.add(app.id); return n; }); }}
-                    className="px-4 py-1.5 rounded-xl text-xs font-700 transition-all duration-200"
-                    style={installed.has(app.id)
-                      ? { background: 'rgba(255,255,255,0.08)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.1)' }
-                      : { background: 'linear-gradient(135deg, #00d2ff, #9b59ff)', color: '#050508' }}>
-                    {installed.has(app.id) ? 'Open' : app.price === 'Free' ? 'Get' : app.price}
-                  </button>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -165,9 +244,9 @@ export default function AppStoreScreen() {
             </div>
             <p className="text-slate-400 text-sm leading-relaxed mb-5">{selectedApp.description}</p>
             <button
-              onClick={() => setInstalled(prev => { const n = new Set(prev); n.has(selectedApp.id) ? n.delete(selectedApp.id) : n.add(selectedApp.id); return n; })}
+              onClick={() => handleInstallToggle(selectedApp.id)}
               className="btn-primary w-full text-sm py-3">
-              {installed.has(selectedApp.id) ? 'Open App' : selectedApp.price === 'Free' ? 'Install Free' : `Buy ${selectedApp.price}`}
+              {installedIds.has(selectedApp.id) ? 'Open App' : selectedApp.price === 'Free' ? 'Install Free' : `Buy ${selectedApp.price}`}
             </button>
           </div>
         </div>
