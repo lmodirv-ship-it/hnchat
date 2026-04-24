@@ -1,55 +1,185 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import Icon from '@/components/ui/AppIcon';
+import AppImage from '@/components/ui/AppImage';
+import { createClient } from '@/lib/supabase/client';
 import { trackSearch } from '@/lib/analytics';
+import Link from 'next/link';
 
 interface SearchResult {
-  id: number;
+  id: string;
+  type: 'post' | 'user' | 'video' | 'product';
   title: string;
+  subtitle: string;
+  description?: string;
+  image?: string;
+  imageAlt?: string;
   url: string;
-  description: string;
-  type: 'web' | 'image' | 'video' | 'news' | 'people';
   time?: string;
-  thumbnail?: string;
+  meta?: string;
 }
 
-const trendingSearches = ['hnChat super app', 'Diamond UI design', 'AI assistant 2026', 'Future tech trends', 'Crypto diamond NFT', 'Space exploration 2026'];
+const trendingSearches = ['hnChat', 'Diamond UI', 'AI assistant', 'Tech trends', 'Crypto', 'Social media'];
 
-const mockResults: Record<string, SearchResult[]> = {
-  web: [
-    { id: 1, title: 'hnChat — The Diamond Super App of the Future', url: 'hnchat.io', description: 'Experience the most advanced super app ever built. Combining social media, AI, gaming, marketplace, and more in one diamond-grade platform.', type: 'web' },
-    { id: 2, title: 'What is a Super App? The Complete Guide 2026', url: 'techfuture.io/super-apps', description: 'Super apps combine multiple services into one platform. Learn how hnChat is revolutionizing the concept with AI-powered features and diamond design.', type: 'web' },
-    { id: 3, title: 'Diamond UI Design Principles — Crystal Aesthetics', url: 'designlab.io/diamond-ui', description: 'Explore the cutting-edge diamond UI design system featuring glassmorphism, crystal gradients, and futuristic micro-interactions.', type: 'web' },
-    { id: 4, title: 'AI Integration in Social Platforms — 2026 Report', url: 'airesearch.org/social-2026', description: 'Comprehensive analysis of how artificial intelligence is transforming social media platforms and user engagement metrics.', type: 'web' },
-  ],
-  news: [
-    { id: 5, title: 'hnChat Reaches 100M Users in Record Time', url: 'technews.io', description: 'The diamond super app platform has achieved unprecedented growth, becoming the fastest-growing app in history.', type: 'news', time: '2 hours ago' },
-    { id: 6, title: 'Future of Social Media: Super Apps Dominate 2026', url: 'wired.com', description: 'Industry analysts predict super apps will replace traditional social platforms by 2027, with hnChat leading the charge.', type: 'news', time: '5 hours ago' },
-    { id: 7, title: 'Diamond Design Trend Takes Over Tech Industry', url: 'designweekly.com', description: 'Crystal and diamond aesthetics are becoming the dominant visual language for next-generation applications.', type: 'news', time: '1 day ago' },
-  ],
-  people: [
-    { id: 8, title: 'Nova Stellar', url: '@novastellar · hnChat', description: 'Tech visionary & diamond design enthusiast. 4.2M followers. Creator of Crystal UI framework.', type: 'people' },
-    { id: 9, title: 'Zara Flux', url: '@zaraflux · hnChat', description: 'AI researcher & super app architect. 2.8M followers. Building the future one pixel at a time.', type: 'people' },
-    { id: 10, title: 'Kai Nexus', url: '@kainexus · hnChat', description: 'Gaming & tech content creator. 6.1M followers. Diamond League champion 2025.', type: 'people' },
-  ],
-};
-
-const tabs = ['All', 'Web', 'News', 'Images', 'Videos', 'People', 'Maps'];
+const tabs = ['All', 'Posts', 'People', 'Videos', 'Products'];
 
 export default function SearchEngineScreen() {
   const [query, setQuery] = useState('');
   const [searched, setSearched] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [searchTime, setSearchTime] = useState(0);
 
-  const handleSearch = (q?: string) => {
-    const searchQuery = q || query;
-    if (!searchQuery.trim()) return;
+  const handleSearch = useCallback(async (q?: string) => {
+    const searchQuery = (q || query).trim();
+    if (!searchQuery) return;
     setQuery(searchQuery);
     setSearched(true);
-    const allResults = [...mockResults.web, ...mockResults.news.slice(0, 2), ...mockResults.people.slice(0, 1)];
-    setResults(allResults);
-    trackSearch(searchQuery, allResults.length);
+    setLoading(true);
+    const startTime = Date.now();
+
+    const supabase = createClient();
+    const allResults: SearchResult[] = [];
+
+    try {
+      // Search posts
+      const { data: posts } = await supabase
+        .from('posts')
+        .select('id, content, created_at, user_profiles(username, full_name, avatar_url)')
+        .ilike('content', `%${searchQuery}%`)
+        .eq('is_published', true)
+        .limit(10);
+
+      (posts || []).forEach((p: any) => {
+        allResults.push({
+          id: p.id,
+          type: 'post',
+          title: p.user_profiles?.full_name || p.user_profiles?.username || 'User',
+          subtitle: `@${p.user_profiles?.username || 'user'}`,
+          description: p.content?.slice(0, 150),
+          image: p.user_profiles?.avatar_url || '',
+          imageAlt: `${p.user_profiles?.full_name || 'User'} avatar`,
+          url: '/home-feed',
+          time: formatTime(p.created_at),
+        });
+      });
+
+      // Search users
+      const { data: users } = await supabase
+        .from('user_profiles')
+        .select('id, username, full_name, avatar_url, bio, is_verified, followers_count')
+        .or(`full_name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%`)
+        .limit(8);
+
+      (users || []).forEach((u: any) => {
+        allResults.push({
+          id: u.id,
+          type: 'user',
+          title: u.full_name || u.username || 'User',
+          subtitle: `@${u.username}${u.is_verified ? ' ✓' : ''}`,
+          description: u.bio || '',
+          image: u.avatar_url || '',
+          imageAlt: `${u.full_name || u.username} profile picture`,
+          url: '/profile',
+          meta: u.followers_count ? `${formatNum(u.followers_count)} followers` : '',
+        });
+      });
+
+      // Search videos
+      const { data: videos } = await supabase
+        .from('videos')
+        .select('id, title, caption, thumbnail_url, thumbnail_alt, views_count, created_at, user_profiles(username, full_name)')
+        .or(`title.ilike.%${searchQuery}%,caption.ilike.%${searchQuery}%`)
+        .eq('is_published', true)
+        .limit(8);
+
+      (videos || []).forEach((v: any) => {
+        allResults.push({
+          id: v.id,
+          type: 'video',
+          title: v.title || v.caption?.slice(0, 60) || 'Video',
+          subtitle: `by ${v.user_profiles?.full_name || v.user_profiles?.username || 'Creator'}`,
+          image: v.thumbnail_url || '',
+          imageAlt: v.thumbnail_alt || v.title || 'Video thumbnail',
+          url: '/short-videos',
+          meta: v.views_count ? `${formatNum(v.views_count)} views` : '',
+          time: formatTime(v.created_at),
+        });
+      });
+
+      // Search products
+      const { data: products } = await supabase
+        .from('marketplace_products')
+        .select('id, name, description, price, image_url, image_alt, category, user_profiles(username, full_name)')
+        .or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`)
+        .eq('is_active', true)
+        .limit(8);
+
+      (products || []).forEach((p: any) => {
+        allResults.push({
+          id: p.id,
+          type: 'product',
+          title: p.name,
+          subtitle: `${p.category} · $${p.price}`,
+          description: p.description?.slice(0, 120),
+          image: p.image_url || '',
+          imageAlt: p.image_alt || p.name,
+          url: '/marketplace',
+          meta: `by ${p.user_profiles?.full_name || p.user_profiles?.username || 'Seller'}`,
+        });
+      });
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+      setSearchTime(parseFloat(elapsed));
+      setTotalCount(allResults.length);
+      setResults(allResults);
+      trackSearch(searchQuery, allResults.length);
+    } catch (err) {
+      console.log('Search error:', err);
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [query]);
+
+  const formatTime = (ts: string) => {
+    if (!ts) return '';
+    const diff = Date.now() - new Date(ts).getTime();
+    const h = Math.floor(diff / 3600000);
+    if (h < 1) return 'Just now';
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  };
+
+  function formatNum(n: number) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return n?.toString() || '0';
+  }
+
+  const filteredResults = results.filter(r => {
+    if (activeTab === 'All') return true;
+    if (activeTab === 'Posts') return r.type === 'post';
+    if (activeTab === 'People') return r.type === 'user';
+    if (activeTab === 'Videos') return r.type === 'video';
+    if (activeTab === 'Products') return r.type === 'product';
+    return true;
+  });
+
+  const typeIcon: Record<string, string> = {
+    post: 'DocumentTextIcon',
+    user: 'UserIcon',
+    video: 'FilmIcon',
+    product: 'ShoppingBagIcon',
+  };
+
+  const typeColor: Record<string, string> = {
+    post: '#00d2ff',
+    user: '#a78bfa',
+    video: '#f59e0b',
+    product: '#34d399',
   };
 
   return (
@@ -60,7 +190,7 @@ export default function SearchEngineScreen() {
           {!searched && (
             <div className="text-center mb-6 pt-8">
               <h1 className="text-4xl font-800 gradient-text mb-2">hnSearch</h1>
-              <p className="text-slate-500 text-sm">Search the diamond web · AI-powered results</p>
+              <p className="text-slate-500 text-sm">Search posts, people, videos & products</p>
             </div>
           )}
           {/* Search bar */}
@@ -115,14 +245,10 @@ export default function SearchEngineScreen() {
             <p className="text-xs font-600 uppercase tracking-widest mb-3" style={{ color: 'rgba(0,210,255,0.6)' }}>⚡ Quick Access</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { icon: '🌐', label: 'Web Search', color: '#00d2ff' },
-                { icon: '📰', label: 'Latest News', color: '#9b59ff' },
-                { icon: '🖼️', label: 'Images', color: '#e879f9' },
+                { icon: '📝', label: 'Posts', color: '#00d2ff' },
+                { icon: '👥', label: 'People', color: '#a78bfa' },
                 { icon: '🎬', label: 'Videos', color: '#f59e0b' },
-                { icon: '👥', label: 'People', color: '#22c55e' },
-                { icon: '🗺️', label: 'Maps', color: '#ef4444' },
-                { icon: '🛍️', label: 'Shopping', color: '#06b6d4' },
-                { icon: '🤖', label: 'AI Search', color: '#8b5cf6' },
+                { icon: '🛍️', label: 'Products', color: '#34d399' },
               ].map(cat => (
                 <button key={cat.label} onClick={() => handleSearch(cat.label)}
                   className="glass-card-hover p-4 flex flex-col items-center gap-2 cursor-pointer">
@@ -135,45 +261,83 @@ export default function SearchEngineScreen() {
         ) : (
           /* Results */
           <div>
-            <p className="text-slate-500 text-xs mb-4">About 2,847,000 results (0.42 seconds) for &quot;<span style={{ color: '#00d2ff' }}>{query}</span>&quot;</p>
-
-            {/* AI Summary */}
-            <div className="glass-card p-4 mb-5" style={{ borderColor: 'rgba(0,210,255,0.2)' }}>
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #00d2ff, #9b59ff)' }}>
-                  <Icon name="SparklesIcon" size={12} className="text-ice-black" />
-                </div>
-                <span className="text-xs font-700" style={{ color: '#00d2ff' }}>AI Summary</span>
+            {loading ? (
+              <div className="space-y-4">
+                {[1,2,3,4,5].map(i => (
+                  <div key={i} className="h-20 rounded-2xl animate-pulse" style={{ background: 'rgba(255,255,255,0.04)' }} />
+                ))}
               </div>
-              <p className="text-slate-300 text-sm leading-relaxed">
-                Based on your search for &quot;<strong>{query}</strong>&quot;, here&apos;s what I found: hnChat is a revolutionary super app combining social media, AI, gaming, marketplace, and communication tools in a single diamond-grade platform. It represents the next evolution of digital interaction.
-              </p>
-            </div>
+            ) : (
+              <>
+                <p className="text-slate-500 text-xs mb-4">
+                  {totalCount} results ({searchTime}s) for &quot;<span style={{ color: '#00d2ff' }}>{query}</span>&quot;
+                </p>
 
-            {/* Results list */}
-            <div className="space-y-4">
-              {results.map(result => (
-                <div key={result.id} className="group cursor-pointer">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-4 h-4 rounded flex items-center justify-center" style={{ background: 'rgba(0,210,255,0.1)' }}>
-                      <Icon name="GlobeAltIcon" size={10} style={{ color: '#00d2ff' }} />
+                {filteredResults.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4">
+                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
+                      style={{ background: 'rgba(0,210,255,0.08)', border: '1px solid rgba(0,210,255,0.15)' }}>
+                      <Icon name="MagnifyingGlassIcon" size={28} className="text-cyan-400" />
                     </div>
-                    <span className="text-slate-500 text-xs">{result.url}</span>
-                    {result.time && <span className="text-slate-600 text-xs">· {result.time}</span>}
+                    <div className="text-center">
+                      <p className="text-white font-semibold">No results found</p>
+                      <p className="text-slate-500 text-sm mt-1">Try a different search term</p>
+                    </div>
                   </div>
-                  <h3 className="text-base font-600 mb-1 transition-colors duration-200 group-hover:underline"
-                    style={{ color: '#7dd3fc' }}>{result.title}</h3>
-                  <p className="text-slate-400 text-sm leading-relaxed">{result.description}</p>
-                </div>
-              ))}
-            </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredResults.map(result => (
+                      <Link key={`${result.type}-${result.id}`} href={result.url}>
+                        <div className="group flex items-start gap-3 p-4 rounded-2xl cursor-pointer transition-all duration-200 hover:scale-[1.01]"
+                          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                          {/* Thumbnail / Avatar */}
+                          <div className="flex-shrink-0 w-12 h-12 rounded-xl overflow-hidden"
+                            style={{ background: 'rgba(255,255,255,0.06)' }}>
+                            {result.image ? (
+                              <AppImage
+                                src={result.image}
+                                alt={result.imageAlt || result.title}
+                                width={48}
+                                height={48}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center"
+                                style={{ background: `${typeColor[result.type]}15` }}>
+                                <Icon name={typeIcon[result.type] as any} size={20} style={{ color: typeColor[result.type] }} />
+                              </div>
+                            )}
+                          </div>
 
-            {/* Load more */}
-            <div className="flex justify-center mt-8">
-              <button className="btn-glass px-8 py-2.5 text-sm font-600">
-                Load More Results
-              </button>
-            </div>
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="text-xs font-600 px-2 py-0.5 rounded-full"
+                                style={{ background: `${typeColor[result.type]}15`, color: typeColor[result.type] }}>
+                                {result.type}
+                              </span>
+                              {result.time && <span className="text-slate-600 text-xs">{result.time}</span>}
+                            </div>
+                            <h3 className="text-sm font-600 text-slate-200 group-hover:text-cyan-400 transition-colors truncate">
+                              {result.title}
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-0.5">{result.subtitle}</p>
+                            {result.description && (
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2">{result.description}</p>
+                            )}
+                            {result.meta && (
+                              <p className="text-xs text-slate-600 mt-1">{result.meta}</p>
+                            )}
+                          </div>
+
+                          <Icon name="ChevronRightIcon" size={16} className="text-slate-600 flex-shrink-0 mt-1 group-hover:text-cyan-400 transition-colors" />
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>
