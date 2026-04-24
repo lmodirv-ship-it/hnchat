@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { toast, Toaster } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
 
 interface CheckoutItem {
   id: string;
@@ -58,6 +59,7 @@ interface BankDetails {
 export default function CheckoutScreen() {
   const { user } = useAuth();
   const supabase = createClient();
+  const { formatAmount, currency, t } = useI18n();
   const [step, setStep] = useState<Step>('cart');
   const [items, setItems] = useState<CheckoutItem[]>(MOCK_ITEMS);
   const [selectedPayment, setSelectedPayment] = useState('bank_transfer');

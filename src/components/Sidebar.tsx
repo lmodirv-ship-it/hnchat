@@ -5,6 +5,7 @@ import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import LanguageCurrencySelector from '@/components/LanguageCurrencySelector';
 
 const navItems = [
   { label: 'Home Feed', icon: 'HomeIcon', path: '/home-feed', badge: null },
@@ -232,6 +233,13 @@ export default function Sidebar({ activePath }: SidebarProps) {
 
       {/* Divider */}
       <div className="mx-3 mb-2" style={{ height: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }} />
+
+      {/* Language & Currency selector */}
+      {!collapsed && (
+        <div className="px-3 pb-2">
+          <LanguageCurrencySelector />
+        </div>
+      )}
 
       {/* User profile bottom */}
       <div className={`p-3 flex items-center gap-3 ${collapsed ? 'justify-center' : ''}`}>

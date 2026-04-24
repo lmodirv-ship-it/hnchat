@@ -4,6 +4,7 @@ import '../styles/tailwind.css';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { PushNotificationProvider } from '@/contexts/PushNotificationContext';
 import { PushStrategyProvider } from '@/contexts/PushStrategyContext';
+import { I18nProvider } from '@/contexts/I18nContext';
 import { Suspense } from 'react';
 import GoogleAnalytics from '@/components/GoogleAnalytics';
 import AdSenseScript from '@/components/AdSenseScript';
@@ -131,14 +132,16 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <GoogleAnalytics />
         </Suspense>
-        <AuthProvider>
-          <PushNotificationProvider>
-            <PushStrategyProvider>
-              {children}
-              <PWAInstallPrompt />
-            </PushStrategyProvider>
-          </PushNotificationProvider>
-        </AuthProvider>
+        <I18nProvider>
+          <AuthProvider>
+            <PushNotificationProvider>
+              <PushStrategyProvider>
+                {children}
+                <PWAInstallPrompt />
+              </PushStrategyProvider>
+            </PushNotificationProvider>
+          </AuthProvider>
+        </I18nProvider>
       </body>
     </html>
   );
