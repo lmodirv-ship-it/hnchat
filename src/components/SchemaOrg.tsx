@@ -19,7 +19,7 @@ export const organizationSchema = {
   '@type': 'Organization',
   name: 'hnChat',
   url: 'https://hnchat.net',
-  logo: "https://images.unsplash.com/photo-1683405800702-92b45d703722",
+  logo: "https://img.rocket.new/generatedImages/rocket_gen_img_10491cce8-1767660840273.png",
   description: 'hnChat is the ultimate super app combining social networking, short video, live streaming, AI assistant, marketplace, crypto trading, and more.',
   sameAs: ['https://hnchat.net'],
   contactPoint: {

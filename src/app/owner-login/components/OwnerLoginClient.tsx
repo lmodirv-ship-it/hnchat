@@ -1,58 +1,24 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState } from 'react';
 import AppLogo from '@/components/ui/AppLogo';
-import { createClient } from '@/lib/supabase/client';
 
 const OWNER_EMAIL = 'lmodirv@gmail.com';
 
 export default function OwnerLoginClient() {
-  const router = useRouter();
-  const supabase = createClient();
-  const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'checking' | 'idle' | 'loading' | 'error' | 'sent'>('checking');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'sent' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user?.email === OWNER_EMAIL) {
-          router.replace('/owner');
-          return;
-        }
-      } catch {
-        // ignore
-      }
-      setStatus('idle');
-    };
-    checkSession();
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email.trim().toLowerCase() !== OWNER_EMAIL.toLowerCase()) {
-      setErrorMsg('Access denied. This email is not authorized.');
-      setStatus('error');
-      return;
-    }
     setStatus('loading');
     setErrorMsg('');
     try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: `${window.location.origin}/owner`,
-        },
-      });
-      if (error) {
-        setErrorMsg(error.message || 'Failed to send login link.');
-        setStatus('error');
-        return;
-      }
+      const res = await fetch('/api/owner-login', { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to send login link');
       setStatus('sent');
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to send login link.');
+      setErrorMsg(err.message || 'حدث خطأ، حاول مجدداً');
       setStatus('error');
     }
   };
@@ -87,44 +53,37 @@ export default function OwnerLoginClient() {
             </div>
           </div>
 
-          {status === 'checking' ? (
-            <div className="flex flex-col items-center gap-3 py-4">
-              <div className="w-8 h-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
-              <p className="text-sm text-slate-400">Checking session...</p>
-            </div>
-          ) : status === 'sent' ? (
-            <div className="flex flex-col items-center gap-3 py-4">
-              <div className="w-12 h-12 rounded-full flex items-center justify-center"
-                style={{ background: 'rgba(0,210,255,0.1)', border: '1px solid rgba(0,210,255,0.3)' }}>
-                <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
+          {status === 'sent' ? (
+            <div className="space-y-4">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto"
+                style={{ background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.3)' }}>
+                <span className="text-3xl">✉️</span>
               </div>
-              <p className="text-sm text-white font-medium">Check your email</p>
-              <p className="text-xs text-slate-400 text-center">A login link has been sent to <span className="text-cyan-400">{email}</span>. Click the link to access the dashboard.</p>
+              <div>
+                <p className="text-sm font-semibold text-white">تم إرسال رابط الدخول</p>
+                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                  تحقق من بريدك الإلكتروني<br />
+                  <span style={{ color: '#00d2ff' }}>{OWNER_EMAIL}</span><br />
+                  وانقر على الرابط للدخول
+                </p>
+              </div>
               <button
                 onClick={() => setStatus('idle')}
-                className="text-xs text-slate-500 hover:text-slate-300 transition-colors mt-2">
-                Send again
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors underline">
+                إعادة الإرسال
               </button>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4 text-left">
               <div>
                 <label className="block text-xs text-slate-400 mb-1.5">Owner Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); setStatus('idle'); setErrorMsg(''); }}
-                  placeholder="Enter owner email"
-                  required
-                  autoComplete="username"
-                  className="w-full px-4 py-3 rounded-xl text-sm text-white placeholder-slate-600 outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
+                <div className="w-full px-4 py-3 rounded-xl text-sm text-slate-300"
                   style={{
                     background: 'rgba(255,255,255,0.05)',
                     border: '1px solid rgba(255,255,255,0.1)',
-                  }}
-                />
+                  }}>
+                  {OWNER_EMAIL}
+                </div>
               </div>
 
               {status === 'error' && (
@@ -139,7 +98,7 @@ export default function OwnerLoginClient() {
                 {status === 'loading' && (
                   <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
                 )}
-                {status === 'loading' ? 'Sending...' : 'Send Login Link'}
+                {status === 'loading' ? 'جاري الإرسال...' : 'إرسال رابط الدخول'}
               </button>
             </form>
           )}

@@ -1,7 +1,16 @@
 'use client';
-import { useGoogleAnalytics } from '@/lib/analytics';
+import { Suspense } from 'react';
+import { useGoogleAnalytics } from '@/lib/hooks/useAnalytics';
 
-export default function GoogleAnalytics() {
+function GoogleAnalyticsInner() {
   useGoogleAnalytics();
   return null;
+}
+
+export default function GoogleAnalytics() {
+  return (
+    <Suspense fallback={null}>
+      <GoogleAnalyticsInner />
+    </Suspense>
+  );
 }

@@ -6,6 +6,7 @@ import AppLogo from '@/components/ui/AppLogo';
 import Icon from '@/components/ui/AppIcon';
 import NotificationsPanel from '@/components/NotificationsPanel';
 import { useAuth } from '@/contexts/AuthContext';
+import LanguageCurrencySelector from '@/components/LanguageCurrencySelector';
 
 export default function Topbar() {
   const [searchFocused, setSearchFocused] = useState(false);
@@ -94,6 +95,8 @@ export default function Topbar() {
 
         {/* Actions */}
         <div className="flex items-center gap-1.5">
+          {/* Language & Currency */}
+          <LanguageCurrencySelector />
           {/* Notifications */}
           <div className="relative">
             <button
