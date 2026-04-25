@@ -1,10 +1,3 @@
-import React, { useEffect, useState } from 'react';
-
-
-
-
-
-
 import AdminLayoutClient from './components/AdminLayoutClient';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
